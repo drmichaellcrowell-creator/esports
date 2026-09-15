@@ -4,6 +4,8 @@
 
 No contradictions were found between frozen sources during compilation that the Final Verification Gate had not already resolved. One implicit composition (Section 7, AuditLog+Outbox combined transaction) was made explicit per the Final Verification Gate's own closing invariant.
 
+**Incorporated amendments.** [Amendment 001 — Bootstrap Authority](amendments/001-bootstrap-authority.md) is incorporated into this document and is in force. It closes the Layer 0 genesis circularity (tenant genesis, policy genesis, and audit actor representation) and resolves the Section 2 / Section 5 `Membership` mutability contradiction in favour of the Section 5 model (`Membership` is `Temporal`). Amendment documents record rationale and the decision trail; **this contract remains the sole implementation source of truth**, and where an amendment document and this contract differ, this contract wins.
+
 ---
 
 ## 1. Global Invariants
@@ -19,8 +21,8 @@ These rules apply across every domain without exception.
 7. **Sensitivity is independent of authorization.** A resource's sensitivity classification (`StandardOperational | RestrictedStudent | HighlyRestricted`) never changes because of who is or isn't authorized to read it, and no role automatically inherits `HighlyRestricted` visibility, including Organization Administrator.
 8. **Grants are additive, never "highest role wins."** Multiple concurrent Role/Scope Assignments each independently authorize their own resource/action; they are never merged into one blended privilege.
 9. **Provenance is preserved, never collapsed.** Restrictions preserve their triggering source; corrections preserve what they corrected; reviews preserve what they reviewed — nothing overwrites the record of why something happened.
-10. **Historical records are immutable; corrections/transitions use explicit supersession (`supersedes_*_id` + `is_current`), sequential append, or controlled one-way lifecycle closure — never in-place mutation of a fact once recorded.** The exact pattern per entity is fixed in Section 2/5; no implementation may substitute one pattern for another.
-11. **Membership deactivation closes all currently-effective dependent Role/Scope/Captain grants** as part of the same transaction; reactivation restores Membership standing only — closed grants are never silently resurrected. A new authorization tenure requires a fresh grant.
+10. **Historical records are immutable; corrections/transitions use explicit supersession (`supersedes_*_id` + `is_current`), sequential append, controlled one-way lifecycle closure, or — where Section 2 designates an entity `Temporal` — controlled status transition in place on a single enduring row that is never duplicated. Outside those designated patterns, never in-place mutation of a fact once recorded.** The exact pattern per entity is fixed in Section 2/5; no implementation may substitute one pattern for another. Where an entity is `Temporal`, the enduring row carries current standing only; the history of how that standing changed is preserved through AuditLog and through the immutable/superseding dependent records, never by duplicating the enduring row.
+11. **Membership deactivation closes all currently-effective dependent Role/Scope/Captain grants** as part of the same transaction; reactivation restores Membership standing only — closed grants are never silently resurrected. A new authorization tenure requires a fresh grant. Membership is a single enduring row per `(user_id, organization_id)` (Section 2, `Temporal`); deactivation and reactivation transition that row's status in place and never create a second Membership row.
 12. **Safe projections are the only path to cross-role or cross-sensitivity visibility.** A projection's field set is fixed by its own frozen definition (Section 8); it is never expanded ad hoc, and it is never treated as source-of-truth provenance.
 13. **AuditLog is required for every operation this contract designates audit-required** (Section 4), commits atomically with the domain change, is fully append-only (no update/delete/supersession/`is_current`), records both actor identity and authority path, and is classified `HighlyRestricted`.
 14. **Durable Outbox is required for every operation this contract designates as requiring asynchronous downstream work**, commits atomically with the domain change, and guarantees at-least-once, idempotent, crash-recoverable processing. For `SharedCompetition` events, one `OutboxEvent` row exists per participating Organization, each independently processed.
@@ -35,18 +37,18 @@ These rules apply across every domain without exception.
 
 ## 2. Canonical Entity Catalog
 
-Legend: **Mut.** = mutability model (`AO+S` = append-only + supersession `is_current`; `AO+Seq` = append-only, sequential, non-superseding; `Temporal` = ordinary open/close, no supersession; `Immut` = fully immutable, no update path at all; `Ctrl` = mutable only via named controlled operation). **Sens.** = sensitivity (`SO` = StandardOperational, `RS` = RestrictedStudent, `HR` = HighlyRestricted). **Client R/W** = raw client read / raw client write policy (`—` = no client path of any kind; role names = who is granted).
+Legend: **Mut.** = mutability model (`AO+S` = append-only + supersession `is_current`; `AO+Seq` = append-only, sequential, non-superseding; `Temporal` = single enduring row whose status is transitioned in place by controlled operation (one-way open/close, or reversible standing), no supersession and no `is_current` chain; `Immut` = fully immutable, no update path at all; `Ctrl` = mutable only via named controlled operation). **Sens.** = sensitivity (`SO` = StandardOperational, `RS` = RestrictedStudent, `HR` = HighlyRestricted). **Client R/W** = raw client read / raw client write policy (`—` = no client path of any kind; role names = who is granted).
 
 ### Identity / Access / Policy
 
 | Entity | Mut. | Sens. | Client R / Client W | Notes |
 |---|---|---|---|---|
-| Organization | Ctrl | SO | Player/Coach/OrgAdmin R / OrgAdmin W | `manage` action reserved to OrgAdmin |
-| Membership | AO+S (status) | RS | self, OrgAdmin R / OrgAdmin W | `invited\|active\|inactive\|removed`; unique `(user_id, org_id)` regardless of status |
+| Organization | Ctrl | SO | Player/Coach/OrgAdmin R / OrgAdmin W | `manage` action reserved to OrgAdmin. **Creation is exclusively via `organization.provision` (Platform authority, Section 4) and is never an OrgAdmin write** — OrgAdmin write authority begins at the moment provisioning commits |
+| Membership | **Temporal** | RS | self, OrgAdmin R / OrgAdmin W | `invited\|active\|inactive\|removed`; unique `(user_id, org_id)` regardless of status. **Exactly one Membership row may ever exist per `(user_id, organization_id)`** — status is the current standing of an enduring Organization relationship, transitioned in place by controlled operation; no supersession, no `is_current` chain, no duplicate rows. Created at `invited` by ordinary invitation, or directly at `active` by `organization.provision` for the designated first OrgAdmin |
 | RoleAssignment | AO+S | RS | self, OrgAdmin R / OrgAdmin W | unique active per `(membership_id, role_category)` |
 | CoachScopeAssignment | AO+S | RS | self, OrgAdmin R / OrgAdmin W | discriminated `(scope_type, scope_reference_id)`: `OrganizationWide\|Game\|Team\|TeamSeason` |
 | CaptainAssignment | AO+S | RS | self, OrgAdmin, coach_scope R / OrgAdmin, coach_scope W | effectiveness requires active Membership + active Player role + RosterAssignment `IN(active,reserve)` |
-| AuthorizationPolicyVersion | Ctrl (pointer only) | — (metadata) | none | rule content in code; record holds `policy_key/version_label/policy_hash/status/effective_from` only; platform singleton active version |
+| AuthorizationPolicyVersion | Ctrl (pointer only) | — (metadata) | none | rule content in code; record holds `policy_key/version_label/policy_hash/status/effective_from` only; platform singleton active version. First version installed by `policy.bootstrap`, thereafter only by `policy.activate` (Section 4). `policy_hash` is **always server-computed** from the in-code artifact and never accepted as input; the resolver recomputes it and **denies every protected operation on mismatch** (Global Invariant 6) |
 
 ### Team / Roster
 
@@ -175,7 +177,7 @@ Legend: **Mut.** = mutability model (`AO+S` = append-only + supersession `is_cur
 
 | Entity | Mut. | Sens. | Client R / W | Notes |
 |---|---|---|---|---|
-| AuditLogEvent | **Immut — zero mutable fields** | **HR** | OrgAdmin(own-org events) R / **—** (server-only write) | corrections = new compensating events only |
+| AuditLogEvent | **Immut — zero mutable fields** | **HR** | OrgAdmin(own-org events) R / **—** (server-only write) | corrections = new compensating events only. `organization_id` is **nullable**: `NULL` denotes a Platform-scoped event, readable by **no** OrgAdmin (an OrgAdmin grant covers own-org events only). `actor_type` is discriminated `user \| platform_operator \| service`, with `actor_user_id`/`actor_membership_id` NULL for the latter two and no fabricated human actor ever substituted (Global Invariant 18). `authority_path` is discriminated `{organization_grant: role_assignment_id, coach_scope_assignment_id?} \| {platform_authority: platform_authority_key} \| {service: service_operation_key}`. Every event records `policy_key/version_label/policy_hash` and an `outcome` including `denied`/`failed` |
 | SharedAuditEventProjection | derived | HR (narrow fields) | participant OrgAdmin R | timestamp/action-type/resource-ref/outcome/acting-participant only |
 | OutboxEvent | Ctrl (processing_state machine) | **RS** (tenant-scoped) / SO (Platform-only, non-student) | **—** (backend/internal-only, no client CRUD) | one row per participant Org for SharedCompetition |
 | OutboxHealthProjection | derived | SO | OrgAdmin(own org) R | aggregate counts only, no raw payload |
@@ -243,6 +245,21 @@ Absence of a row below = **deny**. All rows are additive across concurrently-hel
 ### Platform Administrator
 No standing grant on any Organization's `RestrictedStudent`/`HighlyRestricted` content, any Organization's AuditLog, or any Organization's Outbox. Exists outside Organization hierarchy for platform-level catalog/registry/policy-activation actions only. Any tenant-data investigation requires a deliberate, scoped, time-boxed, audited break-glass grant — never ambient access.
 
+**Platform authority is an infrastructure trust root, never a persisted grant.** It is not a Membership, not a RoleAssignment, and not a row in any table. It is exercised only through an operator-invoked administrative entrypoint in the deployment image, authenticated by a provisioning credential the client-facing API process does not hold, and is **never reachable over the client-facing HTTP API**.
+
+Platform authority may perform **exactly** the following, and nothing else (absence is denial, Global Invariant 6):
+
+| Platform operation | Bound |
+|---|---|
+| `policy.bootstrap` | Once per database, ever; self-extinguishing (Section 4) |
+| `policy.activate` | Platform-level policy activation only |
+| `organization.provision` | Tenant genesis only; authority is exhausted at commit (Section 4) |
+| Platform-level catalog/registry writes | CompetitionProvider, SkillDefinition/GameSkillFramework, CompetitiveTierFramework and similar, as marked "platform" in Section 2 |
+
+**Provisioning authority never becomes Organization authority.** On commit of `organization.provision`, Platform authority over that Organization is exhausted: it acquires no Membership, no RoleAssignment, no standing read of that Organization's `RestrictedStudent` or `HighlyRestricted` content, no read of that Organization's AuditLogEvent rows, and no read of that Organization's OutboxEvent rows. There is no re-provision, suspension, or deprovision path. The authorization resolver contains **no Platform bypass branch for tenant data**; Platform is a distinct authority *source* for the enumerated operations only.
+
+If a platform operator is separately designated as the first administrator of an Organization, they hold that authority **as an ordinary org member via Membership + RoleAssignment**. The two authority sources remain separate and are never merged (Global Invariant 8).
+
 ### Service / Background actors
 Never a fabricated human actor. Always carry `service_operation_key` + `service_source_record_reference`, deriving Organization scope only from the specific persisted record driving the job.
 
@@ -254,12 +271,14 @@ Format: `operation_key` — actors — preconditions — records touched — tra
 
 | Operation | Authorized actors | Preconditions | Creates/Supersedes | Audit | Outbox |
 |---|---|---|---|---|---|
-| `membership.deactivate` | OrgAdmin | active Membership | Membership status; cascades close all dependent Role/Scope/Captain | Required | — |
-| `role.assign` / `role.revoke` | OrgAdmin | — | RoleAssignment (new/superseded) | Required | — |
+| `policy.bootstrap` | Platform (infrastructure trust root; operator entrypoint only) | **zero** rows with `status = active` exist in AuthorizationPolicyVersion | first AuthorizationPolicyVersion pointer, `status = active` | Required (Platform-scoped) | — |
+| `organization.provision` | Platform (operator entrypoint only) | resolvable, hash-verified active AuthorizationPolicyVersion; designated admin identity independently resolved and verified; unused `provisioning_request_id`; unused `organization_key` | Organization + Membership (`active`) + OrganizationAdministrator RoleAssignment, atomically | Required (Organization-scoped) | — |
+| `membership.deactivate` | OrgAdmin | active Membership; **target does not hold the last effective OrganizationAdministrator RoleAssignment in the Organization** | Membership status transitioned **in place** (no new row); cascades close all dependent Role/Scope/Captain | Required | — |
+| `role.assign` / `role.revoke` | OrgAdmin | `role.revoke`: **target is not the last effective OrganizationAdministrator RoleAssignment in the Organization** | RoleAssignment (new/superseded) | Required | — |
 | `scope.assign` / `scope.revoke` | OrgAdmin | Role is Coach | CoachScopeAssignment | Required | — |
 | `captain.assign` | OrgAdmin, coach(scope) | active Membership + active Player role + qualifying RosterAssignment | CaptainAssignment | Required | — |
 | `captain.close` | system (cascade), OrgAdmin | RosterAssignment leaves active/reserve, or Player role closes | CaptainAssignment superseded | Required | — |
-| `policy.activate` | Platform | new version passes validation | AuthorizationPolicyVersion pointer | Required | — |
+| `policy.activate` | Platform (operator entrypoint only) | new version passes validation; **exactly one** active AuthorizationPolicyVersion exists; `policy_hash` recomputed server-side from the in-code artifact | current active AuthorizationPolicyVersion superseded + new pointer created `active`, atomically | Required (Platform-scoped) | — |
 | `roster.move` | coach(scope), OrgAdmin | valid destination TeamSeason | old RosterAssignment closed + new created (+ CaptainAssignment cascade if applicable) | Required | — |
 | `event.materialize_expectations` | system | Event `draft→scheduled` | EventParticipationExpectation set | — | if Notification required |
 | `team_season_competition_entry.transition` | OrgAdmin, coach(scope) | valid Offering/Entry | TeamSeasonCompetitionEntry status | Required | — |
@@ -286,6 +305,30 @@ Format: `operation_key` — actors — preconditions — records touched — tra
 | `announcement.correct` | same as publish | prior Announcement exists | new Announcement inheriting original audience + OutboxEvent | Required | Required |
 | `outbox.replay` | OrgAdmin, own-org/own-participant-portion only | event is dead_letter | processing_state reset | Required | n/a (is the outbox op) |
 
+### 4.1 Bootstrap operations (Amendment 001)
+
+`policy.bootstrap` is the **only** operation in this contract that executes outside the authorization resolver, because no resolvable active policy version can exist before it runs. It is **self-extinguishing**: once any row with `status = active` exists, it is denied permanently. It is not a conditional branch inside the resolver; it is a separate operator entrypoint, unreachable over the network.
+
+`organization.provision` is an **ordinary resolver-gated protected operation** whose authority source is Platform rather than an Organization grant. It runs after a policy is in force and is evaluated through the full resolver chain. The special bootstrap surface is therefore exactly one operation, not two.
+
+**`organization.provision` — inputs.** `provisioning_request_id` (UUID, idempotency key only, confers nothing), `organization_key` (unique platform-wide), `organization_display_name`, `initial_admin_identity` (discriminated `{auth_user_id}` or `{email}`), `provisioning_reference` (bounded opaque external reference for audit provenance; must not carry student narrative, Global Invariant 20). Every other field on every created record is server-derived (Global Invariant 16).
+
+**Identity verification.** The designated administrator's identity is resolved, never accepted as submitted: an `{email}` must resolve to exactly one confirmed authentication identity (zero or multiple → abort); an `{auth_user_id}` must resolve to an existing, confirmed identity (unresolvable → abort). Only the resolved identifier is persisted as `Membership.user_id`. A submitted identifier never becomes trusted by virtue of submission.
+
+**Minimum viable tenant.** Exactly three domain rows plus one audit row. No CoachScopeAssignment (the first administrator is not a coach), no CaptainAssignment (captain effectiveness depends on a Layer 1 RosterAssignment), and **no OutboxEvent** — the Outbox column is "if Notification required" and Notification is Layer 6. Should a provisioning Notification later be required, it is added at Layer 6 and falls under Global Invariant 15 inside this same transaction.
+
+**Idempotency and repetition.** Replay of the same `provisioning_request_id` creates nothing, returns the original Organization's identity, and emits no second audit event. A different `provisioning_request_id` against an existing `organization_key` is denied. **Provisioning is genesis-only and is never repeatable for an existing Organization** — every subsequent administrator is added by an existing OrgAdmin through ordinary `role.assign`.
+
+**Zero-OrgAdmin invariant.** Every Organization has **at least one effective Organization Administrator at every committed transaction boundary**. This is what makes the absence of a break-glass mechanism sustainable rather than a latent operational trap: an Organization with zero administrators would be permanently unadministrable and recoverable only by the tenant-data intervention Section 10 prohibits. Enforcement is hybrid — a deferred database constraint counting effective administrators per affected Organization at transaction end, plus a per-Organization row lock taken by any operation that could reduce that count, without which two concurrent revocations of different administrators could each observe a count of one and both commit.
+
+**Failure behavior.** Any failure rolls the whole transaction back, leaving no Organization, no Membership, no RoleAssignment, and no audit row (Section 10, prohibition 12). A **failed or denied** attempt is recorded by a separate, independently committed audit event with `outcome = denied | failed`. This does not violate Global Invariant 15: that invariant governs the success path, where a domain change exists for the audit and outbox rows to be atomic with. A failure has no domain change. Where the database itself is unreachable, the failure is recorded to operational logs only.
+
+**`policy.bootstrap` — artifact identification and verification.** Rule content remains in code; the record holds metadata, pointer and hash only. `policy_hash` is SHA-256 over a canonical, deterministically ordered serialization of the compiled in-code ruleset, computed by the server and never authoritative from input. An operator may supply an `expected_policy_hash`; if supplied and mismatched, the operation aborts. Thereafter the resolver recomputes the hash on load and on resolution and **denies every protected operation on mismatch** — so a deploy that changes authorization rules without a corresponding `policy.activate` fails closed to deny-all rather than silently running new rules under an old pointer. The audit event for `policy.bootstrap` records the version being installed and is therefore self-referential; every other audit event records the version in force when the decision was made.
+
+**`policy.bootstrap` vs `policy.activate`.** Bootstrap requires zero active versions, is not resolver-gated (it cannot be), creates the first pointer, and can never succeed twice. Activation requires exactly one active version, is fully resolver-gated, supersedes the current active pointer atomically, and is repeatable. Both are operator-entrypoint surfaces. Bootstrap attempted while an active version exists is denied and recorded with `outcome = denied` in its own transaction.
+
+**Bootstrap ordering is mandatory:** `policy.bootstrap`, then `organization.provision`, then ordinary Organization authorization. Tenant provisioning before policy activation is prohibited — provisioning is audit-required and every audit event records the policy version in force, and permitting any protected operation to execute with no policy in force is precisely the fail-open Global Invariant 6 exists to prevent.
+
 ---
 
 ## 5. Lifecycle / State-Machine Catalog
@@ -306,7 +349,14 @@ pending | ready → cancelled  (controlled match.cancel, authority: lifecycle_ca
 `draft → scheduled → in_progress → completed`, plus `cancelled` (from draft/scheduled only). Postponement = cancel + supersession (new Event row), never a status value.
 
 ### Membership.status
-`invited → active ⇄ inactive/removed` (temporal, no supersession — status itself is the current fact). Deactivation is a controlled-closure event, not merely a flag flip: it cascades to close dependent Role/Scope/Captain grants in the same transaction.
+`invited → active ⇄ inactive/removed` (**Temporal** — status itself is the current fact; no supersession, no `is_current` chain). Deactivation is a controlled-closure event, not merely a flag flip: it cascades to close dependent Role/Scope/Captain grants in the same transaction.
+
+**Exactly one Membership row may ever exist for a given `(user_id, organization_id)`.** `UNIQUE (user_id, organization_id)` applies regardless of status. The row is an enduring Organization relationship whose status is transitioned in place, only through controlled operations; it is never superseded and never duplicated. Reactivation restores Membership standing only and never resurrects previously closed Role/Scope/Captain grants — a new authorization tenure requires fresh grants (Global Invariant 11). Historical authorization changes are preserved through AuditLog and through the immutable/superseding dependent grant records, **not** through duplicate Membership rows. Hard deletion of Membership remains prohibited through ordinary product workflows (Section 10, prohibition 11).
+
+Genesis: ordinary Membership is created at `invited`. The single exception is the designated first administrator created by `organization.provision`, which is created directly at `active` — the identity having been independently resolved and verified at provisioning time, and an Organization created with an `invited` administrator would hold zero *effective* administrators at commit, violating the zero-OrgAdmin invariant (Section 4.1).
+
+### AuthorizationPolicyVersion.status
+`active → superseded` (one-way; no other transition exists). **At most one row platform-wide may hold `status = active` at any time.** The first active pointer is created by `policy.bootstrap` and thereafter only by `policy.activate`, which supersedes the current active row and creates the new one in a single transaction. A missing, ambiguous, or hash-mismatched active version denies every protected operation (Global Invariant 6).
 
 ### RosterAssignment.participation_status
 `active ⇄ reserve ⇄ inactive` (same row, in-tenure) → `completed | removed` (terminal for that row; a new TeamSeason requires a new row).
@@ -334,6 +384,13 @@ AO+S; correction = new superseding row (OrgAdmin only); PlayerCompetitiveResult 
 LAYER 0 — Foundation (must exist before anything else)
   Organization, Membership, RoleAssignment, CoachScopeAssignment, CaptainAssignment,
   AuthorizationPolicyVersion + resolver, AuditLogEvent, OutboxEvent
+
+  Layer 0 begins with bootstrap, in this order and no other:
+    1. policy.bootstrap        — installs the first active AuthorizationPolicyVersion
+                                 (the only operation outside the resolver; self-extinguishing)
+    2. organization.provision  — tenant genesis (resolver-gated, Platform authority source)
+    3. ordinary Organization authorization from here onward
+  No protected operation may precede a resolvable, hash-verified active policy version.
 
 LAYER 1 — Team/Roster
   Team, TeamSeason, RosterAssignment, OrganizationGameOffering, RosterDisplayProjection
@@ -370,7 +427,9 @@ Every row below is one atomic transaction — partial commit is never acceptable
 
 | Transaction | Records that commit/fail together |
 |---|---|
-| Membership deactivation | Membership status + every dependent Role/Scope/Captain closure + AuditLog event(s) |
+| `policy.bootstrap` (T-BOOT) | first AuthorizationPolicyVersion (`status = active`) + Platform-scoped AuditLog event |
+| `organization.provision` (T-PROV) | Organization + Membership (`active`) + OrganizationAdministrator RoleAssignment + Organization-scoped AuditLog event — **no partial tenant is ever observable** |
+| Membership deactivation | Membership status transitioned in place (no new Membership row) + every dependent Role/Scope/Captain closure + AuditLog event(s) |
 | Roster move | old RosterAssignment close + new RosterAssignment create + CaptainAssignment cascade (if applicable) + AuditLog event |
 | Captain grant | 4-way prerequisite validation + CaptainAssignment create + AuditLog event |
 | Event expectation materialization | Event status transition + full EventParticipationExpectation set + AuditLog event (if required) + OutboxEvent (if Notification required) |
@@ -385,6 +444,8 @@ Every row below is one atomic transaction — partial commit is never acceptable
 | `restriction.review` (any outcome) | RestrictionReview create + (if modify/revoke/expire) superseding ParticipationRestriction create + AuditLog event |
 
 **Global Invariant 15 applies without exception**: wherever a transaction row above requires both AuditLog and Outbox, all three (domain change, audit event, outbox row(s)) are one transaction — never split.
+
+**Failure-path audit events are the one exception, and are outside Global Invariant 15 rather than a relaxation of it.** When an operation is denied or fails, its domain transaction rolls back and takes any audit row written inside it along. The denial is therefore recorded by a separate, independently committed AuditLog event carrying `outcome = denied | failed`. Invariant 15 governs the success path, where a domain change exists for the audit and outbox rows to be atomic with; a failure has no domain change. This must not be read as license to split a *successful* operation's audit or outbox writes.
 
 ---
 
@@ -443,13 +504,18 @@ Implementation agents must **never**:
 8. Copy sensitive narrative from a higher-sensitivity source (ConductIncident, ConductResponse, PrivateCoachNote, raw academic detail) into a lower-sensitivity field — including `RestrictionReview.review_reason_code` (must remain a closed enum), `EligibilityEvaluation` (must use typed `source_reference` + `reason_code`, never free text), or any Notification `template_parameters`.
 9. Expose `OrganizationMatchEvent`, `AnnouncementAudience`, `MatchParticipantLineupLock`, `NotificationDeliveryAttempt`, or `OutboxEvent` through any generic client-facing CRUD endpoint, for any role.
 10. Treat any projection listed in Section 8 as source-of-truth provenance for a Notification, AuditLog event, OutboxEvent, or authorization decision.
-11. Mutate a historical row where supersession or append-only correction is the defined pattern (Section 2's Mut. column) — this includes never hard-deleting Membership/Role/Scope/Captain/Goal/SkillEvaluation/etc. rows through ordinary product workflows.
+11. Mutate a historical row where supersession or append-only correction is the defined pattern (Section 2's Mut. column) — this includes never hard-deleting Membership/Role/Scope/Captain/Goal/SkillEvaluation/etc. rows through ordinary product workflows. Conversely, never create a second `Temporal` row where Section 2 designates a single enduring row: a Membership status change is an in-place controlled transition, never a superseding or duplicate `(user_id, organization_id)` row.
 12. Commit a protected domain mutation if its required AuditLog event and/or Outbox event(s) fail to write — the entire transaction must roll back (Global Invariant 15).
 13. Allow one Organization's actor to lock, unlock, confirm, or otherwise write against another Organization's `MatchParticipant`, `MatchParticipantLineupLock`, or `MatchResultConfirmation` row — even within a `SharedCompetition` Match.
 14. Apply a permissive default when a `SharedCompetition` Ruleset authority selector (`lifecycle_start/complete/cancel`, `schedule_change`, `finalization_authority_model`) is missing, malformed, or ambiguous — this must fail closed, never default to `any_participant_may_*`.
 15. Allow Platform Administrator standing, unrestricted read access to any Organization's `RestrictedStudent`/`HighlyRestricted` content, AuditLog, or Outbox — any such access requires an explicit, scoped, time-boxed, audited break-glass grant that does not yet exist in this architecture and must not be implemented as an ambient capability.
 16. Store `due_at` as an independently persisted field on `ActionItem`, or `rendered_summary`/free-text on `Notification` — both are structurally removed in favor of live derivation and closed templates respectively.
 17. Infer fault, blame, or a disciplinary conclusion from `EquipmentConditionAssessment.condition_state = damaged`, `EquipmentAsset.status = missing`, an overdue `EquipmentAssignment`, or an `AccountabilityRecord.status = incomplete` — none of these may automatically create or imply a `ConductIncident`.
+18. Expose `policy.bootstrap`, `policy.activate`, or `organization.provision` through the client-facing HTTP API, or through any client-reachable surface. These are operator-entrypoint operations only. Self-service tenant provisioning is a deliberate future architecture gate and must not be built ambiently.
+19. Grant Platform authority a Membership or RoleAssignment as a means of administering a tenant, or treat Platform authority as surviving the commit of `organization.provision`. Platform authority over a provisioned Organization is exhausted at that moment.
+20. Re-provision, suspend, or deprovision an existing Organization. `organization.provision` is genesis-only; additional administrators are added exclusively by an existing OrgAdmin through `role.assign`.
+21. Allow an Organization to reach zero effective Organization Administrators. `role.revoke` and `membership.deactivate` must deny when the target holds the last effective OrganizationAdministrator RoleAssignment.
+22. Accept an operator- or client-supplied `policy_hash` as authoritative, or continue serving protected operations when the active `AuthorizationPolicyVersion.policy_hash` does not match the hash recomputed from the in-code ruleset. A mismatch denies everything.
 
 ---
 
@@ -466,10 +532,15 @@ Run at the end of every implementation phase before declaring it complete:
 - [ ] **AuditLog**: every operation designated audit-required in Section 4 produces exactly one (or correctly correlated multiple) AuditLogEvent row(s), atomically with its domain change; confirm zero mutability on any written row.
 - [ ] **Outbox**: every operation designated Outbox-required produces the correct row(s) — one for OrganizationOwned, one per participant for SharedCompetition — atomically; confirm idempotent reprocessing produces no duplicate downstream effect.
 - [ ] **Lifecycle legality**: attempt every illegal state transition named in Section 5/10 (e.g., cancel from in_progress, disputed→final directly) and confirm rejection.
-- [ ] **Supersession/current-state correctness**: for every `is_current`-pattern entity touched, confirm exactly one `is_current = true` row exists per key at all times, and that historical rows are unreachable as "current" through any query path.
+- [ ] **Supersession/current-state correctness**: for every `is_current`-pattern entity touched, confirm exactly one `is_current = true` row exists per key at all times, and that historical rows are unreachable as "current" through any query path. For every `Temporal` entity touched, confirm the converse: exactly one enduring row exists per key and **no** second row is ever created by a status transition — specifically, that `UNIQUE (user_id, organization_id)` on Membership holds across deactivation and reactivation.
 - [ ] **Fail-closed behavior**: test malformed/missing policy version, missing Ruleset authority selector, unresolvable Organization context, and confirm denial (never a permissive fallback) in every case.
 - [ ] **Tests**: automated coverage exists for every fail-closed case listed in this phase's relevant domain gate(s).
 - [ ] **No direct client CRUD bypass**: confirm `OrganizationMatchEvent`, `AnnouncementAudience`, `MatchParticipantLineupLock`, `NotificationDeliveryAttempt`, `OutboxEvent` have zero client-reachable endpoints.
+- [ ] **Bootstrap is self-extinguishing**: confirm a second `policy.bootstrap` invocation is denied once an active AuthorizationPolicyVersion exists, and that concurrent bootstrap attempts resolve to exactly one active row.
+- [ ] **Policy hash enforcement**: confirm a mismatch between the active pointer's `policy_hash` and the hash recomputed from the in-code ruleset denies every protected operation, rather than serving them under the stale pointer.
+- [ ] **Zero-OrgAdmin prevention**: confirm `role.revoke` and `membership.deactivate` are rejected for the last effective OrganizationAdministrator, including under concurrent revocation of two different administrators in separate transactions.
+- [ ] **Provisioning idempotency and non-repetition**: confirm replay of the same `provisioning_request_id` creates nothing and emits no second AuditLog event; confirm a second provisioning against an existing `organization_key` is denied; confirm a forced mid-transaction failure leaves no Organization, Membership, or RoleAssignment.
+- [ ] **Platform authority containment**: confirm Platform-scoped AuditLog events (`organization_id IS NULL`) are unreadable by every OrgAdmin; confirm Platform authority holds no Membership, no RoleAssignment, and no read path into any Organization's `RestrictedStudent`/`HighlyRestricted` content, AuditLog, or Outbox after provisioning commits.
 
 ---
 
@@ -489,5 +560,6 @@ Run at the end of every implementation phase before declaring it complete:
 | AuditLog | AuditLog Infrastructure Gate (original + correction round) |
 | Durable Outbox | Durable Outbox Infrastructure Gate (original + two correction rounds) |
 | Cross-domain composition, register, minors closure | Cross-Domain Invariant + Integration Review, its revision, and the Final Verification Gate |
+| Bootstrap authority, `organization.provision`, `policy.bootstrap`, zero-OrgAdmin invariant, `Membership` Temporal ruling, AuditLog actor discrimination | Backend Substrate Selection Gate → Amendment 001 — Bootstrap Authority (in force, not merely provenance) |
 
 This document is the sole implementation source of truth going forward. The gates listed above remain available for historical design rationale only.

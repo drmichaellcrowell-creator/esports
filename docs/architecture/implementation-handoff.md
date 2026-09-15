@@ -20,12 +20,20 @@ Do not invent, assume, or fill any of the following if the contract is silent on
 - Retry counts, lease timeouts, or other Outbox/operational tuning parameters — these are deliberately left as implementation-time operational decisions, not architectural ones, but must not be chosen in a way that violates the at-least-once/idempotency guarantees in Contract Section 1.
 - A Platform Administrator break-glass mechanism — this is a named, deliberate future dependency, not something to build ambiently in Phase 0/1.
 
+**Provisioning authority is not break-glass — do not conflate them.** Amendment 001 defines a narrow, genesis-only Platform provisioning authority (`policy.bootstrap`, `organization.provision`). The distinction is exact:
+
+- **Permitted (Amendment 001):** establishing the minimum trusted state required for the authorization model to begin operating. It creates one Organization, one Membership, one OrganizationAdministrator RoleAssignment, and the first AuthorizationPolicyVersion. It confers **no read access to any tenant content whatsoever**, and Platform authority over that Organization is exhausted the instant provisioning commits.
+- **Still forbidden:** break-glass investigative access — any standing or ad-hoc Platform read into an Organization's `RestrictedStudent`/`HighlyRestricted` content, AuditLog, or Outbox. This remains a named future dependency requiring its own scoped, time-boxed, audited grant, and must not be inferred from the existence of provisioning authority.
+
+Nothing in Amendment 001 widens Platform authority beyond the operations enumerated in Contract Section 3. Absence from that enumeration remains denial.
+
 If a genuine gap is found during implementation — something the contract needed to specify but didn't — stop and surface it explicitly rather than resolving it silently, exactly as every prior architecture gate in this project required.
 
 ## 4. Implementation dependency order
 
 Follow Contract Section 6 exactly. In sequence, not in parallel where a dependency exists:
 
+0. **Bootstrap** (Amendment 001): `policy.bootstrap` installs the first active `AuthorizationPolicyVersion`, **then** `organization.provision` performs tenant genesis. This order is mandatory — no protected operation may execute before a resolvable, hash-verified active policy version exists, and `organization.provision` is itself a protected operation. `policy.bootstrap` is the only operation in the architecture that runs outside the authorization resolver, and it is self-extinguishing.
 1. **Foundation**: Organization, Membership, RoleAssignment, CoachScopeAssignment, CaptainAssignment, the centralized authorization resolver, AuditLogEvent, OutboxEvent.
 2. **Team/Roster**: Team, TeamSeason, RosterAssignment, OrganizationGameOffering, RosterDisplayProjection.
 3. **Events/Practice/Attendance** and **Equipment** (may proceed in parallel — both depend only on 1+2).
