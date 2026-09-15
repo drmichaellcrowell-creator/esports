@@ -29,8 +29,8 @@ frontend/
       Layout.tsx             — app shell: sidebar + header + content outlet
       Sidebar.tsx            — role-aware navigation sidebar
       RoleSwitcher.tsx       — Coach/Player/Admin role toggle
-      PlaceholderPage.tsx    — renders placeholder for each nav area
       PlaceholderPage.tsx    — wrapper that looks up nav item by role+path
+      PagePlaceholder.tsx    — renders placeholder for each nav area
     App.tsx                  — route definitions
 ```
 
