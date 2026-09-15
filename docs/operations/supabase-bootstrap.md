@@ -179,6 +179,63 @@ purpose here.
 
 ---
 
+## 3b. Dashboard-only bootstrap (no Node, no local tooling)
+
+The whole of 3.1–3.3 can be done in the Supabase SQL Editor instead, using the
+committed migration files unchanged. Two things make that safe rather than a
+divergence:
+
+**The migration files are safe to run by hand.** Both are idempotent — guarded
+role creation, `CREATE SCHEMA IF NOT EXISTS`, and `REVOKE`/`ALTER` statements
+that assert a state rather than toggle one. Neither touches application data:
+`0000` has no data-mutating statement at all, and `0001`'s only `INSERT` is the
+ledger row. Re-running either changes nothing.
+
+**The migration ledger must be registered afterwards.** The runner records each
+applied file in `migrations.applied_migration` with a SHA-256 of its contents.
+Applying the SQL by hand leaves that ledger empty, so a later `npm run migrate`
+would treat both as pending. They would re-apply harmlessly, but the ledger would
+be misrepresenting the database — exactly the drift the checksum mechanism
+exists to catch. `scripts/register-manual-migration.sql` inserts the two rows
+with the canonical checksums and closes that gap.
+
+Verified end to end against a real PostgreSQL: after applying both files by hand
+and registering the ledger, `npm run migrate` reports `count: 0`, "no new
+migrations". Migration history is preserved exactly.
+
+Order, each as its own SQL Editor query:
+
+1. paste `backend/migrations/0000_infrastructure.sql`
+2. paste `backend/migrations/0001_database_roles.sql`
+3. paste `backend/scripts/register-manual-migration.sql`
+4. paste `backend/scripts/verify-substrate.sql` — read-only, returns one row per
+   check
+
+`verify-substrate.sql` reads only `pg_namespace`, `pg_roles`, `pg_tables`,
+`pg_default_acl`, `pg_has_role` and `pg_get_userbyid`. It never reads `pg_authid`,
+the only catalog holding password verifiers, and every value it returns is a role
+name, schema name, boolean, count or literal — so its output is safe to share.
+Its failure detection is tested: an unregistered ledger, `app` exposed to the
+Data API, `anon` granted USAGE, a Layer 0 table, a cross-membership between
+`app_api` and `app_provisioner`, and `app_api` granted CREATE are each detected.
+
+### What this path defers
+
+Two checks genuinely require connecting **as `app_api` through the session
+pooler**, and cannot be done from the SQL Editor, which connects as the project
+owner: transaction commit/rollback, and `FOR UPDATE SKIP LOCKED` under
+concurrency. The structural posture those checks depend on is fully verified by
+the SQL above; what remains unproven is that the configured *endpoint* behaves
+correctly.
+
+Defer them to the first environment that holds the `app_api` credential in a
+secret store — CI or a deployment host — by running `npm run verify:substrate`
+there. The tradeoff is explicit: Phase 0B's structure is proven now, and the
+endpoint behaviour is proven when there is somewhere legitimate to keep the
+credential. CI already proves the same code path against a disposable database on
+every run, so what is outstanding is specifically the pooler's behaviour, not the
+logic.
+
 ## 4. Where the bootstrap can be run from
 
 **A Claude Code cloud session cannot reach the database.** Its egress goes
