@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  pull_request:
+    # `labeled`/`unlabeled` are included so that applying or removing the
+    # `architecture-amendment` label re-evaluates the architecture guard.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+
+# No cloud credentials are used anywhere in this workflow. Integration tests run
+# against a throwaway PostgreSQL service container, never a real environment.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Consumed by tests/helpers/postgres.ts. Each test file creates and drops
+      # its own database on this server, so migrations always run against an
+      # empty database. Absent this, the helper falls back to Testcontainers.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: backend
+        run: npm run typecheck
+
+      - name: Test
+        working-directory: backend
+        run: npm test
+
+      - name: Build
+        working-directory: backend
+        run: npm run build
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build (includes typecheck)
+        working-directory: frontend
+        run: npm run build
+
+  boundaries:
+    name: Architecture boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the merge base with the target branch resolves.
+          fetch-depth: 0
+
+      - name: Frontend must not depend on Base44
+        run: |
+          if grep -rn '@base44' frontend/package.json frontend/src 2>/dev/null; then
+            echo "::error::Base44 must remain a preview harness, never a dependency."
+            exit 1
+          fi
+          echo "ok: no @base44 dependency"
+
+      - name: Frontend must not access the database or Supabase data directly
+        run: |
+          if grep -rniE '@supabase/|createClient\(|postgres://|postgresql://' frontend/src 2>/dev/null; then
+            echo "::error::Option B: the browser has no direct database or Supabase data access."
+            exit 1
+          fi
+          echo "ok: no direct data access from the frontend"
+
+      - name: Verify the architecture guard's own logic
+        run: .github/scripts/check-architecture-changes.test.sh
+
+      - name: Canonical architecture documents are protected
+        # Blocking. Canonical architecture documents may only change in a
+        # dedicated amendment pull request, declared by the
+        # `architecture-amendment` label. Pushes to main are not gated here and
+        # continue through normal CI.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          PR_LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" = 'pull_request' ]; then
+            git fetch --no-tags origin "${BASE_REF}"
+            CHANGED_FILES="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+          else
+            CHANGED_FILES=''
+          fi
+          PR_LABELS="$(printf '%s' "${PR_LABELS_JSON:-[]}" | jq -r '.[]? // empty')"
+          export CHANGED_FILES PR_LABELS
+          .github/scripts/check-architecture-changes.sh
