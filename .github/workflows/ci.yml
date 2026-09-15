@@ -2,6 +2,9 @@ name: CI
 
 on:
   pull_request:
+    # `labeled`/`unlabeled` are included so that applying or removing the
+    # `architecture-amendment` label re-evaluates the architecture guard.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
 
@@ -90,6 +93,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so the merge base with the target branch resolves.
+          fetch-depth: 0
 
       - name: Frontend must not depend on Base44
         run: |
@@ -107,16 +113,26 @@ jobs:
           fi
           echo "ok: no direct data access from the frontend"
 
-      - name: Canonical architecture documents must not change outside an amendment gate
-        if: github.event_name == 'pull_request'
+      - name: Verify the architecture guard's own logic
+        run: .github/scripts/check-architecture-changes.test.sh
+
+      - name: Canonical architecture documents are protected
+        # Blocking. Canonical architecture documents may only change in a
+        # dedicated amendment pull request, declared by the
+        # `architecture-amendment` label. Pushes to main are not gated here and
+        # continue through normal CI.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          PR_LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          changed=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- \
-            docs/architecture/implementation-contract.md \
-            docs/architecture/implementation-handoff.md \
-            'docs/architecture/amendments/**')
-          if [ -n "$changed" ]; then
-            echo "::warning::Canonical architecture documents changed: $changed"
-            echo "This is only permitted in a dedicated architecture amendment gate."
+          set -euo pipefail
+          if [ "${EVENT_NAME}" = 'pull_request' ]; then
+            git fetch --no-tags origin "${BASE_REF}"
+            CHANGED_FILES="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+          else
+            CHANGED_FILES=''
           fi
-          echo "ok: checked"
+          PR_LABELS="$(printf '%s' "${PR_LABELS_JSON:-[]}" | jq -r '.[]? // empty')"
+          export CHANGED_FILES PR_LABELS
+          .github/scripts/check-architecture-changes.sh
