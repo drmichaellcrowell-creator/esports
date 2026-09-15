@@ -133,26 +133,28 @@ Startup refuses a `DATABASE_URL` that connects as `app_provisioner`,
 mistake here fails immediately rather than quietly running the API with genesis
 authority.
 
-### 3.4 JWT signing keys — project setting, dashboard only
+### 3.4 JWT signing keys — ALREADY SATISFIED for `esports-platform`
 
 The backend verifies tokens against the public JWKS endpoint and accepts
 **RS256 and ES256 only**, rejecting `alg: none` and HS256. A project still using
 the legacy shared secret publishes no keys there, so every token would be
 rejected — correct fail-closed behaviour, but nothing would work.
 
-1. **Settings → JWT**.
-2. Click **Migrate JWT secret**. A standby asymmetric key is created.
-3. Click **Rotate keys** to make it the current signing key.
-4. Leave the legacy secret in "previously used" until existing tokens expire,
-   then revoke it. Nothing in this backend depends on it.
+**Verified against the live project: asymmetric signing is already active.** The
+JWKS endpoint publishes one `ES256` P-256 key with `use: sig`, `key_ops:
+["verify"]` and no private material. **No key migration or rotation is
+required**, and none should be performed.
 
-Confirm the endpoint now returns a key:
+Check at any time, with no credential:
 
 ```bash
-curl -s https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json
+cd backend && npm run verify:auth
 ```
 
-An empty `keys` array means step 3 has not taken effect yet.
+Should a future project ever still be on the legacy secret, the migration path is
+**Settings → JWT** → **Migrate JWT secret** → **Rotate keys**, leaving the legacy
+secret in "previously used" until existing tokens expire. Nothing in this backend
+depends on that secret.
 
 ### 3.5 Data API exposure — project setting, verifiable from SQL
 
@@ -177,13 +179,35 @@ purpose here.
 
 ---
 
-## 4. Verification
+## 4. Where the bootstrap can be run from
+
+**A Claude Code cloud session cannot reach the database.** Its egress goes
+through an HTTPS proxy: port 443 to the pooler host is reachable, port 5432 is
+not. This is a property of the sandbox, not of the project or the credential —
+supplying the password would not change it. Measured from a session:
+
+| Target | Result |
+|---|---|
+| `aws-0-us-east-1.pooler.supabase.com:443` | open |
+| `aws-0-us-east-1.pooler.supabase.com:5432` | blocked |
+| `db.<project-ref>.supabase.co:5432` | blocked |
+| `https://<project-ref>.supabase.co` | reachable |
+
+So steps 3.1 to 3.3 run from a machine with ordinary outbound access — a
+developer laptop, a CI runner, or a deployment host. Everything over HTTPS,
+including `npm run verify:auth`, runs anywhere.
+
+`npm run verify:substrate` prints role names, privileges and outcomes and never
+prints a connection string, so its output can be shared or pasted into a review
+safely.
+
+## 5. Verification
 
 ```bash
 cd backend && npm run verify:substrate
 ```
 
-Checks the schema and its owner, all four roles and their attributes, that the
+`verify:substrate` checks the schema and its owner, all four roles and their attributes, that the
 API and provisioner cannot reach each other's authority, that no client-facing
 role or `PUBLIC` can touch `app`, that no default privilege grants access, that
 the Data API does not expose `app`, that transactions commit and roll back and
@@ -197,7 +221,7 @@ confirms nothing was left behind.
 
 ---
 
-## 5. What is not done yet
+## 6. What is not done yet
 
 Phase 0B establishes the substrate only. Still absent, by design:
 

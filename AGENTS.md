@@ -156,6 +156,19 @@ Checks roles, privileges, Option B lockdown, Data API exposure and transaction
 semantics against whatever database is configured — a disposable container or
 the real project. Prints role names and outcomes, never a connection string.
 
+```bash
+cd backend && npm run verify:auth
+```
+
+Checks the project's published signing keys against what the verifier accepts.
+Needs no credential and no database — a JWKS endpoint serves public keys — so it
+works from anywhere HTTPS reaches the project.
+
+Note: a Claude Code cloud session can reach the project over HTTPS but **not**
+over PostgreSQL port 5432, so migrations and `verify:substrate` against the real
+project must run from a machine with ordinary outbound access. See
+`docs/operations/supabase-bootstrap.md`.
+
 Applies every `migrations/*.sql` not yet recorded, in order, each in its own
 transaction. Applied migrations are immutable — editing one is refused by
 checksum. Add a new migration instead.

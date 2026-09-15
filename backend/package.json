@@ -16,7 +16,8 @@
     "build": "tsc --project tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify:substrate": "tsx src/entrypoints/verify-substrate.ts"
+    "verify:substrate": "tsx src/entrypoints/verify-substrate.ts",
+    "verify:auth": "tsx src/entrypoints/verify-auth.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
