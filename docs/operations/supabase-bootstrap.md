@@ -20,6 +20,27 @@ contract requires the separation, not for convenience.
 | `app_api` | yes | API and worker runtime identity | `USAGE` on `app` only |
 | `app_provisioner` | yes | Operator-only genesis authority (Phase 0C) | `USAGE` on `app` only |
 
+### Working within a managed platform's privileges
+
+A managed platform grants the project owner `CREATEROLE` but **not** `SUPERUSER`,
+and PostgreSQL refuses to let a non-superuser set the `SUPERUSER`, `REPLICATION`
+or `BYPASSRLS` attributes at all — even to turn them *off*. Migration `0001`
+therefore **asserts** those three rather than setting them, raising an exception
+that names the offending role if any of ours carries one.
+
+That is not a concession. A bare `CREATE ROLE` already yields all three as false,
+so the desired state is reached either way; and asserting is strictly stronger
+than setting, because setting would silently normalise a role that had been
+elevated elsewhere, whereas asserting stops the migration and reports it.
+
+Two further operations need the migrating role to be able to `SET ROLE` to
+`app_owner`: transferring schema ownership, and declaring default privileges
+`FOR ROLE app_owner`. On PostgreSQL 16+ membership alone is not enough —
+`CREATEROLE`'s automatic grant carries `ADMIN` but not `SET`, and ownership
+transfer fails with *"must be able to SET ROLE"*. The migration issues
+`GRANT app_owner TO <current_user> WITH SET TRUE`, falling back to a plain grant
+on older servers and skipping it entirely for a superuser.
+
 **Neither `app_api` nor `app_provisioner` holds any default privilege.** That
 absence is the mechanism. A table created later grants them nothing until a
 migration says so explicitly, which is what makes Amendment 001 invariant I12 —
@@ -210,6 +231,17 @@ Order, each as its own SQL Editor query:
 3. paste `backend/scripts/register-manual-migration.sql`
 4. paste `backend/scripts/verify-substrate.sql` — read-only, returns one row per
    check
+
+`verify-substrate.sql` can be run at any point, including before anything else
+has been applied: it reports missing pieces as `FAIL` rows rather than failing.
+Two details make that work, and both are easy to get wrong. PostgreSQL resolves
+relation names at *parse* time, so the migration-ledger checks read that table
+through `query_to_xml` behind a `to_regclass` guard rather than referencing it
+directly. And `has_schema_privilege()` *raises* when the schema is absent instead
+of returning NULL, so every call sits behind a `to_regnamespace` guard. Its first
+row reports the connected role, whether it is a superuser, whether it holds
+`CREATEROLE`, and the server version — which is what diagnoses a privilege
+failure.
 
 `verify-substrate.sql` reads only `pg_namespace`, `pg_roles`, `pg_tables`,
 `pg_default_acl`, `pg_has_role` and `pg_get_userbyid`. It never reads `pg_authid`,

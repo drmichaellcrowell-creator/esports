@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS migrations.applied_migration (
 
 INSERT INTO migrations.applied_migration (name, checksum) VALUES
   ('0000_infrastructure.sql', 'e0340940358d1c62959e85888d7a89eb7531bf917cb6798ebbaa67ca48c941ec'),
-  ('0001_database_roles.sql', 'f94fd43ecef9436a421ccbf0ca22a5546ab3fa6c710e9ee61f245583b7ac36db')
+  ('0001_database_roles.sql', '75723d88d756266355f646caee2dcb25cf4a7125dc9a4365cfc1a70f16109002')
 ON CONFLICT (name) DO NOTHING;
 
 SELECT name, checksum, applied_at FROM migrations.applied_migration ORDER BY name;

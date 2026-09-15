@@ -13,7 +13,13 @@
 --
 -- It reads catalogs only and writes nothing.
 -- =============================================================================
-WITH expected_roles(rolname, want_login, want_inherit) AS (
+WITH environment AS (
+  SELECT current_user AS who,
+         (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS is_superuser,
+         (SELECT rolcreaterole FROM pg_roles WHERE rolname = current_user) AS can_create_role,
+         current_setting('server_version') AS pg_version
+),
+expected_roles(rolname, want_login, want_inherit) AS (
   VALUES ('app_owner', false, false),
          ('app_migrator', true, true),
          ('app_api', true, false),
@@ -21,17 +27,25 @@ WITH expected_roles(rolname, want_login, want_inherit) AS (
 ),
 checks AS (
 
+  -- 0. environment context (no credential: role name and capability only) ----
+  SELECT 0 AS seq, 'context: migrating role and server' AS check_name,
+         CASE WHEN can_create_role THEN 'PASS' ELSE 'FAIL' END AS status,
+         'role=' || who || ' superuser=' || is_superuser
+           || ' createrole=' || can_create_role || ' postgres=' || pg_version AS detail
+    FROM environment
+
+  UNION ALL
   -- 1. schema ------------------------------------------------------------
   SELECT 1 AS seq, 'app schema exists' AS check_name,
-         CASE WHEN count(*) = 1 THEN 'PASS' ELSE 'FAIL' END AS status,
-         COALESCE(max(pg_get_userbyid(nspowner)), 'absent') AS detail
-    FROM pg_namespace WHERE nspname = 'app'
+         CASE WHEN to_regnamespace('app') IS NULL THEN 'FAIL' ELSE 'PASS' END AS status,
+         COALESCE((SELECT 'owner=' || pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'app'),
+                  'absent — run 0000_infrastructure.sql') AS detail
 
   UNION ALL
   SELECT 2, 'app schema owned by app_owner',
-         CASE WHEN count(*) = 1 THEN 'PASS' ELSE 'FAIL' END,
-         COALESCE(max(pg_get_userbyid(nspowner)), 'n/a')
-    FROM pg_namespace WHERE nspname = 'app' AND pg_get_userbyid(nspowner) = 'app_owner'
+         CASE WHEN (SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'app') = 'app_owner'
+              THEN 'PASS' ELSE 'FAIL' END,
+         COALESCE((SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'app'), 'schema absent')
 
   -- 2. roles exist -------------------------------------------------------
   UNION ALL
@@ -75,20 +89,26 @@ checks AS (
   -- 5. runtime schema privileges ----------------------------------------
   UNION ALL
   SELECT 7, 'schema privilege: ' || t.rolname || ' has USAGE, not CREATE',
-         CASE WHEN has_schema_privilege(t.rolname,'app','USAGE')
+         CASE WHEN to_regnamespace('app') IS NULL THEN 'FAIL'
+              WHEN NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = t.rolname) THEN 'FAIL'
+              WHEN has_schema_privilege(t.rolname,'app','USAGE')
                AND NOT has_schema_privilege(t.rolname,'app','CREATE') THEN 'PASS' ELSE 'FAIL' END,
-         'usage=' || has_schema_privilege(t.rolname,'app','USAGE')
-           || ' create=' || has_schema_privilege(t.rolname,'app','CREATE')
+         CASE WHEN to_regnamespace('app') IS NULL THEN 'schema app does not exist'
+              WHEN NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = t.rolname) THEN 'role does not exist'
+              ELSE 'usage=' || has_schema_privilege(t.rolname,'app','USAGE')
+                || ' create=' || has_schema_privilege(t.rolname,'app','CREATE') END
     FROM (VALUES ('app_api'), ('app_provisioner')) AS t(rolname)
 
   -- 6. Option B: client-facing roles have nothing -----------------------
   UNION ALL
   SELECT 8, 'Option B: ' || c.rolname || ' has no access to app',
-         CASE WHEN NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = c.rolname) THEN 'PASS'
+         CASE WHEN to_regnamespace('app') IS NULL THEN 'PASS'
+              WHEN NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = c.rolname) THEN 'PASS'
               WHEN has_schema_privilege(c.rolname,'app','USAGE')
                 OR has_schema_privilege(c.rolname,'app','CREATE') THEN 'FAIL'
               ELSE 'PASS' END,
-         CASE WHEN NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = c.rolname)
+         CASE WHEN to_regnamespace('app') IS NULL THEN 'schema app does not exist'
+              WHEN NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = c.rolname)
               THEN 'role does not exist here'
               ELSE 'usage=' || has_schema_privilege(c.rolname,'app','USAGE')
                 || ' create=' || has_schema_privilege(c.rolname,'app','CREATE') END
@@ -96,9 +116,12 @@ checks AS (
 
   UNION ALL
   SELECT 9, 'Option B: PUBLIC has no privilege on app',
-         CASE WHEN COALESCE(array_to_string(nspacl, ','), '') ~ '(^|,)=' THEN 'FAIL' ELSE 'PASS' END,
-         'schema acl entries: ' || COALESCE(array_length(nspacl, 1), 0)::text
-    FROM pg_namespace WHERE nspname = 'app'
+         CASE WHEN to_regnamespace('app') IS NULL THEN 'FAIL'
+              WHEN COALESCE((SELECT array_to_string(nspacl, ',') FROM pg_namespace WHERE nspname='app'), '') ~ '(^|,)='
+              THEN 'FAIL' ELSE 'PASS' END,
+         COALESCE('schema acl entries: ' ||
+           (SELECT COALESCE(array_length(nspacl, 1), 0)::text FROM pg_namespace WHERE nspname='app'),
+           'schema absent')
 
   -- 7. default privileges ------------------------------------------------
   UNION ALL
@@ -148,20 +171,32 @@ checks AS (
     FROM pg_tables WHERE schemaname = 'public'
 
   -- 10. migration ledger -------------------------------------------------
+  -- The ledger table may not exist yet. A plain reference would fail at PARSE
+  -- time, taking the whole report down, so it is read through query_to_xml:
+  -- the relation name is a string evaluated at run time, and the CASE guard
+  -- short-circuits when to_regclass finds nothing. Still strictly read-only.
   UNION ALL
   SELECT 15, 'migration ledger records both migrations',
-         CASE WHEN count(*) = 2 THEN 'PASS' ELSE 'FAIL' END,
-         COALESCE(string_agg(name, ', ' ORDER BY name), 'ledger empty or missing')
-    FROM migrations.applied_migration
-   WHERE name IN ('0000_infrastructure.sql', '0001_database_roles.sql')
+         CASE WHEN l.n = 2 THEN 'PASS' ELSE 'FAIL' END,
+         CASE WHEN l.n IS NULL
+              THEN 'ledger table does not exist — run register-manual-migration.sql'
+              ELSE l.n::text || ' of 2 recorded' END
+    FROM (SELECT CASE WHEN to_regclass('migrations.applied_migration') IS NULL THEN NULL ELSE
+            (xpath('/row/c/text()', (query_to_xml(
+              'SELECT count(*) AS c FROM migrations.applied_migration WHERE name IN '
+              '(''0000_infrastructure.sql'', ''0001_database_roles.sql'')',
+              false, true, ''))))[1]::text::int END AS n) AS l
 
   UNION ALL
   SELECT 16, 'ledger checksums match the committed files',
-         CASE WHEN count(*) = 2 THEN 'PASS' ELSE 'FAIL' END,
-         count(*)::text || ' of 2 checksums match'
-    FROM migrations.applied_migration
-   WHERE (name, checksum) IN (
-           ('0000_infrastructure.sql', 'e0340940358d1c62959e85888d7a89eb7531bf917cb6798ebbaa67ca48c941ec'),
-           ('0001_database_roles.sql', 'f94fd43ecef9436a421ccbf0ca22a5546ab3fa6c710e9ee61f245583b7ac36db'))
+         CASE WHEN c.n = 2 THEN 'PASS' ELSE 'FAIL' END,
+         CASE WHEN c.n IS NULL THEN 'ledger table does not exist'
+              ELSE c.n::text || ' of 2 checksums match' END
+    FROM (SELECT CASE WHEN to_regclass('migrations.applied_migration') IS NULL THEN NULL ELSE
+            (xpath('/row/c/text()', (query_to_xml(
+              'SELECT count(*) AS c FROM migrations.applied_migration WHERE (name, checksum) IN ('
+              '(''0000_infrastructure.sql'', ''e0340940358d1c62959e85888d7a89eb7531bf917cb6798ebbaa67ca48c941ec''),'
+              '(''0001_database_roles.sql'', ''75723d88d756266355f646caee2dcb25cf4a7125dc9a4365cfc1a70f16109002''))',
+              false, true, ''))))[1]::text::int END AS n) AS c
 )
 SELECT status, check_name, detail FROM checks ORDER BY seq, check_name;

@@ -36,11 +36,22 @@
 -- until an operator deliberately issues a credential.
 --
 -- This migration requires an authority that can CREATE ROLE. It is applied with
--- the project-owner/bootstrap credential, not with app_migrator.
+-- the project-owner/bootstrap credential, not with app_migrator. It does NOT
+-- require SUPERUSER: every statement here is within reach of a CREATEROLE role,
+-- which is what a managed platform grants a project owner.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
 -- Roles. Created without passwords and without any privilege-bearing attribute.
+--
+-- A bare CREATE ROLE already yields NOSUPERUSER, NOCREATEDB, NOCREATEROLE,
+-- NOREPLICATION and NOBYPASSRLS. Only the attributes that differ per role are
+-- stated, because a managed platform's project owner holds CREATEROLE but not
+-- SUPERUSER, and PostgreSQL refuses to let such a role SET the SUPERUSER,
+-- REPLICATION or BYPASSRLS attributes at all — even to turn them off.
+-- Those three are therefore ASSERTED below rather than set. That is not a
+-- weakening: setting an attribute would mask a pre-existing elevated role,
+-- whereas asserting it aborts the migration and names the offender.
 -- -----------------------------------------------------------------------------
 DO $$
 DECLARE
@@ -55,22 +66,61 @@ BEGIN
 END
 $$;
 
--- Attributes are asserted every run, so drift is corrected rather than assumed.
+-- Settable attributes, asserted every run so drift is corrected.
 -- NOINHERIT on the runtime identities means that even an accidental future
 -- membership grant would not silently take effect without an explicit SET ROLE.
-ALTER ROLE app_owner       NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
-ALTER ROLE app_migrator      LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS   INHERIT;
-ALTER ROLE app_api           LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
-ALTER ROLE app_provisioner   LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+ALTER ROLE app_owner       NOLOGIN NOCREATEDB NOCREATEROLE NOINHERIT;
+ALTER ROLE app_migrator      LOGIN NOCREATEDB NOCREATEROLE   INHERIT;
+ALTER ROLE app_api           LOGIN NOCREATEDB NOCREATEROLE NOINHERIT;
+ALTER ROLE app_provisioner   LOGIN NOCREATEDB NOCREATEROLE NOINHERIT;
+
+-- -----------------------------------------------------------------------------
+-- Non-settable security attributes: FAIL CLOSED rather than assume.
+--
+-- These cannot be altered without SUPERUSER, so the migration refuses to
+-- continue if any of our roles carries one. Reaching this error means a role of
+-- ours was created elsewhere with elevated rights, which must be investigated
+-- rather than papered over.
+-- -----------------------------------------------------------------------------
+DO $$
+DECLARE
+  offender record;
+BEGIN
+  FOR offender IN
+    SELECT rolname, rolsuper, rolreplication, rolbypassrls
+      FROM pg_roles
+     WHERE rolname IN ('app_owner', 'app_migrator', 'app_api', 'app_provisioner')
+       AND (rolsuper OR rolreplication OR rolbypassrls)
+  LOOP
+    RAISE EXCEPTION
+      'role % carries an elevated attribute (SUPERUSER=%, REPLICATION=%, BYPASSRLS=%). '
+      'These cannot be removed without SUPERUSER and must never be held by an '
+      'application role. Investigate how the role acquired them before retrying.',
+      offender.rolname, offender.rolsuper, offender.rolreplication, offender.rolbypassrls;
+  END LOOP;
+END
+$$;
 
 -- app_migrator inherits app_owner so migrated objects are owned by app_owner.
 -- The runtime identities are members of nothing.
 GRANT app_owner TO app_migrator;
 
--- The bootstrap authority needs membership in app_owner to transfer ownership.
+-- -----------------------------------------------------------------------------
+-- The migrating role needs to be able to SET ROLE to app_owner, in order to
+-- transfer schema ownership and to declare default privileges FOR ROLE app_owner.
+--
+-- Membership alone is not enough on PostgreSQL 16+: CREATEROLE's automatic grant
+-- carries ADMIN but not SET, so ownership transfer fails with
+-- "must be able to SET ROLE". Earlier versions have no SET option and plain
+-- membership suffices. A superuser needs neither.
+-- -----------------------------------------------------------------------------
 DO $$
 BEGIN
-  IF NOT pg_has_role(current_user, 'app_owner', 'MEMBER') THEN
+  IF (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN
+    RAISE NOTICE 'current role is a superuser; no explicit app_owner grant needed';
+  ELSIF current_setting('server_version_num')::int >= 160000 THEN
+    EXECUTE format('GRANT app_owner TO %I WITH SET TRUE', current_user);
+  ELSE
     EXECUTE format('GRANT app_owner TO %I', current_user);
   END IF;
 END
