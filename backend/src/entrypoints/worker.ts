@@ -8,7 +8,12 @@ async function main(): Promise<void> {
   const env = loadEnv()
   const logger = createLogger(env)
   const pool = createPool({
-    connectionString: env.DATABASE_URL,
+    // Shares the app_api runtime identity with the API by default; a separate
+    // URL lets the worker use its own pooled connection without changing the
+    // API's. Both must be session-mode connections — the Outbox claim pattern
+    // holds a transaction across SELECT ... FOR UPDATE SKIP LOCKED and its
+    // follow-up writes, which transaction-mode pooling cannot guarantee.
+    connectionString: env.WORKER_DATABASE_URL ?? env.DATABASE_URL,
     max: 4,
     applicationName: 'esports-worker',
   })

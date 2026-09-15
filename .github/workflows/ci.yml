@@ -68,6 +68,19 @@ jobs:
         working-directory: backend
         run: npm run build
 
+      - name: Verify security substrate against disposable PostgreSQL
+        # Runs the same checks used against the real project. MIGRATION_DATABASE_URL
+        # is intentionally unset: the disposable database has a single superuser,
+        # so this also exercises the documented bootstrap fallback path.
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          SUPABASE_JWT_ISSUER: https://example.supabase.co/auth/v1
+          SUPABASE_JWKS_URL: https://example.supabase.co/auth/v1/.well-known/jwks.json
+        run: |
+          npm run migrate
+          npm run verify:substrate
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
@@ -112,6 +125,27 @@ jobs:
             exit 1
           fi
           echo "ok: no direct data access from the frontend"
+
+      - name: Base44 must stay credential-free
+        run: |
+          if grep -rniE 'DATABASE_URL|SERVICE_ROLE|JWT_SECRET|PASSWORD|postgres(ql)?://' \
+               .base44/ docker-compose.base44.yml 2>/dev/null; then
+            echo "::error::Base44 is a preview harness and must never carry a backend credential."
+            exit 1
+          fi
+          if [ "$(python3 -c "import json;print(json.load(open('.base44/environment.json'))['secrets'])")" != "[]" ]; then
+            echo "::error::.base44/environment.json declares secrets."
+            exit 1
+          fi
+          echo "ok: Base44 declares no secrets"
+
+      - name: Frontend environment example must declare no backend secret
+        run: |
+          if grep -nE 'DATABASE_URL|SERVICE_ROLE|JWT_SECRET|PASSWORD' frontend/.env.example 2>/dev/null; then
+            echo "::error::Every VITE_* value is public; no backend secret may appear here."
+            exit 1
+          fi
+          echo "ok: frontend example environment is secret-free"
 
       - name: Verify the architecture guard's own logic
         run: .github/scripts/check-architecture-changes.test.sh

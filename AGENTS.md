@@ -47,10 +47,18 @@ and identity only.
    OutboxEvent rows commit in one transaction. `src/db/transaction.ts` makes
    nested calls join rather than split, and refuses a second connection inside an
    active transaction.
-6. **Two database identities.** The API credential and the provisioner credential
-   are distinct, and startup refuses them being equal. Nothing under `src/api/`
-   may import the provisioner.
-7. **Base44 is a frontend preview harness only** — never a dependency, an auth
+6. **Four database authorities, deliberately separate.** `app_owner` owns the
+   `app` schema; `app_migrator` applies migrations; `app_api` is the API/worker
+   runtime identity; `app_provisioner` is operator-only genesis authority.
+   Startup refuses an API credential that connects as any of the other three,
+   and refuses any two of the configured URLs being identical. Nothing under
+   `src/api/` may import the provisioner. Neither runtime identity holds a
+   default privilege, so a future table grants them nothing until a migration
+   says so explicitly — that is what makes Amendment 001 invariant I12
+   structural. See `docs/operations/supabase-bootstrap.md`.
+7. **Session-mode connections only.** Transaction-mode pooling loses session
+   state between transactions and cannot support the Outbox claim pattern.
+8. **Base44 is a frontend preview harness only** — never a dependency, an auth
    provider, a data source, or a place for secrets.
 
 ## Backend structure
@@ -61,12 +69,15 @@ backend/
   src/
     config/env.ts       Zod environment validation — fails closed
     observability/      structured logging with secret redaction
+    config/
+      database-identity.ts  role names; refuses a credential that is not ours
     db/
       pool.ts           long-running connection pool
       transaction.ts    transaction boundary and anti-split guarantees
       migrate.ts        SQL migration runner
       provisioner.ts    separate provisioner authority (API must not import)
       schema.ts         Drizzle schema — `app` schema, no domain tables yet
+      verify.ts         substrate security checks (CI and real project alike)
     auth/               Supabase JWT verification, server-derived identity
     authz/              resolver + controlled-operation seams (both throw)
     api/                Fastify app, centralized errors, health routes
@@ -129,6 +140,21 @@ processing: `OutboxEvent` does not exist yet.
 ```bash
 cd backend && npm run migrate
 ```
+
+Prefers `MIGRATION_DATABASE_URL`; falls back to `DATABASE_URL` and says so.
+Migration `0001` creates database roles and needs an authority that can
+`CREATE ROLE`, so the first run uses the project owner credential. Full sequence:
+`docs/operations/supabase-bootstrap.md`.
+
+### Verify the security substrate
+
+```bash
+cd backend && npm run verify:substrate
+```
+
+Checks roles, privileges, Option B lockdown, Data API exposure and transaction
+semantics against whatever database is configured — a disposable container or
+the real project. Prints role names and outcomes, never a connection string.
 
 Applies every `migrations/*.sql` not yet recorded, in order, each in its own
 transaction. Applied migrations are immutable — editing one is refused by

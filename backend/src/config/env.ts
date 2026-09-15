@@ -1,4 +1,9 @@
 import { z } from 'zod'
+import {
+  databaseRoleFromUrl,
+  FORBIDDEN_PRODUCTION_RUNTIME_ROLES,
+  FORBIDDEN_RUNTIME_ROLES,
+} from './database-identity.js'
 
 /**
  * Environment validation.
@@ -44,12 +49,28 @@ export const environmentSchema = z
     DATABASE_URL: postgresUrl,
 
     /**
+     * Connection used by the worker process. Optional: when unset the worker
+     * uses DATABASE_URL, since it shares the `app_api` runtime identity. A
+     * separate value exists so the worker can be pointed at its own pooled
+     * connection without changing the API's.
+     */
+    WORKER_DATABASE_URL: postgresUrl.optional(),
+
+    /**
      * Connection used only by operator-invoked provisioning entrypoints
-     * (`policy.bootstrap`, `organization.provision` — Phase 0B). It is optional
+     * (`policy.bootstrap`, `organization.provision` — Phase 0C). It is optional
      * here because those entrypoints do not exist yet, and the API must never
      * hold it. See `src/db/provisioner.ts`.
      */
     PROVISIONER_DATABASE_URL: postgresUrl.optional(),
+
+    /**
+     * Connection used only to apply migrations. Optional: when unset the
+     * migrate entrypoint falls back to DATABASE_URL and says so. Migration
+     * 0001 creates roles and therefore needs the project bootstrap credential,
+     * not `app_api`.
+     */
+    MIGRATION_DATABASE_URL: postgresUrl.optional(),
 
     /** Supabase Auth JWT issuer, e.g. https://<project-ref>.supabase.co/auth/v1 */
     SUPABASE_JWT_ISSUER: httpsUrl,
@@ -64,17 +85,62 @@ export const environmentSchema = z
     WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(100).max(600_000).default(30_000),
   })
   .superRefine((value, ctx) => {
-    // Privilege separation is only real if the two credentials actually differ.
+    // Privilege separation is only real if the credentials actually differ.
+    for (const name of ['PROVISIONER_DATABASE_URL', 'MIGRATION_DATABASE_URL'] as const) {
+      const other = value[name]
+      if (other !== undefined && other === value.DATABASE_URL) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [name],
+          message: `must not equal DATABASE_URL — the API and ${
+            name === 'PROVISIONER_DATABASE_URL' ? 'provisioner' : 'migration'
+          } authority must be distinct database identities`,
+        })
+      }
+    }
+
     if (
       value.PROVISIONER_DATABASE_URL !== undefined &&
-      value.PROVISIONER_DATABASE_URL === value.DATABASE_URL
+      value.MIGRATION_DATABASE_URL === value.PROVISIONER_DATABASE_URL
     ) {
       ctx.addIssue({
         code: 'custom',
-        path: ['PROVISIONER_DATABASE_URL'],
+        path: ['MIGRATION_DATABASE_URL'],
         message:
-          'must not equal DATABASE_URL — the API and provisioner must be distinct database identities',
+          'must not equal PROVISIONER_DATABASE_URL — migration and genesis authority are distinct',
       })
+    }
+
+    // The API and worker must not be started with an authority that is not
+    // theirs. Amendment 001 invariant I12 is a database grant, but handing the
+    // API the provisioner's credential would route around it entirely.
+    for (const name of ['DATABASE_URL', 'WORKER_DATABASE_URL'] as const) {
+      const url = value[name]
+      if (url === undefined) {
+        continue
+      }
+      const role = databaseRoleFromUrl(url)
+      if (role === undefined) {
+        continue
+      }
+      if (FORBIDDEN_RUNTIME_ROLES.includes(role)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [name],
+          message:
+            `must not connect as "${role}" — that is a provisioning, migration or ownership ` +
+            'authority, never a runtime identity. Use the app_api role.',
+        })
+      } else if (
+        value.NODE_ENV === 'production' &&
+        FORBIDDEN_PRODUCTION_RUNTIME_ROLES.includes(role)
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [name],
+          message: `must not connect as "${role}" in production — use the least-privileged app_api role`,
+        })
+      }
     }
   })
 
