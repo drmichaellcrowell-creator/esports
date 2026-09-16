@@ -101,6 +101,10 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Test
+        working-directory: frontend
+        run: npm test
+
   boundaries:
     name: Architecture boundaries
     runs-on: ubuntu-latest
@@ -110,27 +114,25 @@ jobs:
           # Full history so the merge base with the target branch resolves.
           fetch-depth: 0
 
-      - name: Frontend must not depend on Base44
-        run: |
-          if grep -rn '@base44' frontend/package.json frontend/src 2>/dev/null; then
-            echo "::error::Base44 must remain a preview harness, never a dependency."
-            exit 1
-          fi
-          echo "ok: no @base44 dependency"
+      - name: Verify the frontend boundary check's own logic
+        run: .github/scripts/check-frontend-base44-boundary.test.sh
 
-      - name: Frontend must not access the database or Supabase data directly
-        run: |
-          if grep -rniE '@supabase/|createClient\(|postgres://|postgresql://' frontend/src 2>/dev/null; then
-            echo "::error::Option B: the browser has no direct database or Supabase data access."
-            exit 1
-          fi
-          echo "ok: no direct data access from the frontend"
+      - name: Frontend respects the Base44 adapter boundary
+        # Blocking. Base44 is the active v1 substrate, so the frontend is no
+        # longer forbidden the SDK outright — it is confined to one adapter
+        # directory, with entity access, service-role access, credentials and
+        # direct Supabase/database access banned outright. Replaces the earlier
+        # blanket "must not depend on Base44" rule, which was correct while
+        # Base44 was only a preview harness.
+        run: .github/scripts/check-frontend-base44-boundary.sh frontend/src
 
-      - name: Base44 must stay credential-free
+      - name: Base44 preview harness must stay credential-free
+        # The docker-compose preview harness is not the application substrate.
+        # It mounts ./frontend and holds no credential either way.
         run: |
           if grep -rniE 'DATABASE_URL|SERVICE_ROLE|JWT_SECRET|PASSWORD|postgres(ql)?://' \
                .base44/ docker-compose.base44.yml 2>/dev/null; then
-            echo "::error::Base44 is a preview harness and must never carry a backend credential."
+            echo "::error::The Base44 preview harness must never carry a backend credential."
             exit 1
           fi
           if [ "$(python3 -c "import json;print(json.load(open('.base44/environment.json'))['secrets'])")" != "[]" ]; then

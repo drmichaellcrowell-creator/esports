@@ -38,7 +38,7 @@ any v1 entity, function, or operation.
 | Area | State |
 |---|---|
 | Frontend | Application shell — role-based navigation, placeholder pages, no data access |
-| Base44 v1 | Architecture profile frozen; **no production entity, function, resolver or operation implemented yet** |
+| Base44 v1 | Operation adapter boundary established. **No production entity, backend function, workflow, resolver or product operation implemented yet** |
 | Backend (Reference Profile) | Phase 0B substrate — API, worker, database and auth boundaries, plus the four database authorities provisioned and verified on the real project (28/28). **No domain model yet.** Two Session-pooler runtime checks remain deferred; see `docs/operations/supabase-bootstrap.md` |
 | Layer 0 domain | Not implemented on either substrate. Organization, Membership, RoleAssignment, CoachScopeAssignment, CaptainAssignment, AuthorizationPolicyVersion and AuditLogEvent are the first Base44 v1 work; OutboxEvent is excluded from v1 with the Communication domain |
 | Authorization | **Not implemented.** The resolver throws; there is no permissive placeholder, and no protected product route exists |
@@ -94,10 +94,32 @@ Supabase Auth for authentication and identity only.
    are version-guarded conditional writes plus reconciliation, defined in
    `docs/architecture/base44-implementation-profile-v1.md`, which is where any
    agent implementing v1 must look first.
-9. **The docker-compose Base44 preview harness remains a preview harness.** It
+9. **The frontend reaches the substrate through one adapter, never directly.**
+   The Base44 SDK may be imported only under `frontend/src/infrastructure/base44/`.
+   Pages, components, hooks and application modules call
+   `OperationExecutor.execute(name, input)` and see `OperationResult`. Entity
+   access, service-role access and credentials are banned throughout
+   `frontend/src`, and `.github/scripts/check-frontend-base44-boundary.sh`
+   fails the build on any of it. Operation names come from the registry in
+   `frontend/src/application/operations/registry.ts`, whose canonical
+   `operation_key` values are Contract Section 4's — never invented.
+10. **The docker-compose Base44 preview harness remains a preview harness.** It
    mounts `./frontend` and is unrelated to the Base44 application substrate.
 
 ## Backend structure
+
+```
+frontend/
+  src/
+    application/
+      operations/       substrate-neutral contract, registry, ids — no Base44
+      react/            provider + useOperation hook — no Base44
+    infrastructure/
+      base44/           THE ONLY place the Base44 SDK may be imported
+    testing/            in-memory executor — test infrastructure, never shipped
+    components/         UI — sees OperationResult, never a substrate
+  tests/architecture/   boundary tests that name the banned literals
+```
 
 ```
 backend/
@@ -212,7 +234,8 @@ checksum. Add a new migration instead.
 ### Run tests
 
 ```bash
-cd backend && npm test
+cd frontend && npm test    # Vitest + jsdom
+cd backend  && npm test
 ```
 
 Integration tests need real PostgreSQL and never mock it. Provide one with
