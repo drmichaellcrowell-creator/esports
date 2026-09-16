@@ -12,13 +12,35 @@ implementation work.** See `docs/architecture/implementation-contract.md`,
 `docs/architecture/amendments/`. Where the contract is silent, stop and request
 an architecture decision rather than inferring one.
 
+## Substrate: Base44 is the active v1, PostgreSQL is the preserved reference
+
+| | |
+|---|---|
+| **Active v1 substrate** | **Base44** — Auth for identity, entities for persistence, backend functions for controlled operations, access rules denying direct client CRUD, scheduled workflows for reconciliation |
+| **Preserved Reference Profile** | **PostgreSQL / Supabase** — merged, CI-covered, dormant. No production workload. See `docs/architecture/reference-profile-status.md` |
+| **Hybrid runtime** | **Not authorized.** Exactly one authoritative store for v1 data, and it is Base44. No dual-write, no synchronisation |
+| **Canonical contract** | Unchanged, and remains the **full-strength reference** |
+
+**Any Base44 v1 implementation work must follow
+`docs/architecture/base44-implementation-profile-v1.md`.** It is the only place
+deviations from the canonical contract exist. The profile narrows and never
+widens; where it is silent, the contract governs; a deviation not written in its
+deviation register does not exist.
+
+Base44 cannot provide multi-record ACID transactions, database-enforced
+constraints, or a durable outbox. The profile is how that is contained — through
+version-guarded conditional writes, an application-owned resolver, and
+reconciliation sweeps as a primary integrity mechanism. Read it before writing
+any v1 entity, function, or operation.
+
 ## Current state
 
 | Area | State |
 |---|---|
 | Frontend | Application shell — role-based navigation, placeholder pages, no data access |
-| Backend | Phase 0B substrate — API, worker, database and auth boundaries, plus the four database authorities provisioned and verified on the real project (28/28). **No domain model yet.** Two Session-pooler runtime checks remain deferred; see `docs/operations/supabase-bootstrap.md` |
-| Layer 0 domain | Not implemented. Organization, Membership, RoleAssignment, CoachScopeAssignment, CaptainAssignment, AuthorizationPolicyVersion, AuditLogEvent and OutboxEvent are Phase 0B |
+| Base44 v1 | Architecture profile frozen; **no production entity, function, resolver or operation implemented yet** |
+| Backend (Reference Profile) | Phase 0B substrate — API, worker, database and auth boundaries, plus the four database authorities provisioned and verified on the real project (28/28). **No domain model yet.** Two Session-pooler runtime checks remain deferred; see `docs/operations/supabase-bootstrap.md` |
+| Layer 0 domain | Not implemented on either substrate. Organization, Membership, RoleAssignment, CoachScopeAssignment, CaptainAssignment, AuthorizationPolicyVersion and AuditLogEvent are the first Base44 v1 work; OutboxEvent is excluded from v1 with the Communication domain |
 | Authorization | **Not implemented.** The resolver throws; there is no permissive placeholder, and no protected product route exists |
 
 ## Tech stack
@@ -28,8 +50,11 @@ an architecture decision rather than inferring one.
 **Backend** — Node.js 22, TypeScript (strict), Fastify 5, Zod 4, Drizzle ORM,
 `pg`, pino, jose. Tests: Vitest with Testcontainers or a PostgreSQL service.
 
-**Data/identity** — Supabase-managed PostgreSQL; Supabase Auth for authentication
-and identity only.
+**Data/identity (active v1)** — Base44 entities and Base44 Auth; authentication
+and identity only — Base44 roles and claims are never the authorization root.
+
+**Data/identity (preserved Reference Profile)** — Supabase-managed PostgreSQL;
+Supabase Auth for authentication and identity only.
 
 ## Architectural rules that constrain everyday work
 
@@ -37,10 +62,11 @@ and identity only.
    the frontend through the backend API. Nothing is exposed through PostgREST,
    and RLS is not the authorization mechanism.
 2. **Application tables live in the `app` schema, never `public`.**
-3. **Authentication is not authorization.** Supabase Auth establishes *which
-   verified identity* this is. Authority comes from application-owned Membership,
-   RoleAssignment, CoachScopeAssignment and CaptainAssignment. The Supabase
-   `role` and `app_metadata` claims are never consulted.
+3. **Authentication is not authorization.** The identity provider — Base44 Auth
+   on v1, Supabase Auth on the Reference Profile — establishes *which verified
+   identity* this is. Authority comes from application-owned Membership,
+   RoleAssignment, CoachScopeAssignment and CaptainAssignment. Provider-native
+   role and metadata claims are never consulted.
 4. **No permissive placeholder authorization, ever.** If authorization is not
    implemented for an operation, the operation does not exist.
 5. **Atomicity is structural.** A domain change, its AuditLogEvent and its
@@ -58,8 +84,18 @@ and identity only.
    structural. See `docs/operations/supabase-bootstrap.md`.
 7. **Session-mode connections only.** Transaction-mode pooling loses session
    state between transactions and cannot support the Outbox claim pattern.
-8. **Base44 is a frontend preview harness only** — never a dependency, an auth
-   provider, a data source, or a place for secrets.
+8. **Base44 is the active v1 substrate** — Auth, entities, backend functions and
+   scheduled workflows. Rules 1, 3 and 4 apply to it unchanged: the browser
+   never touches governed entities directly, the Base44 role is never the
+   authorization root, and there is no permissive placeholder authorization. No
+   service-role credential or secret ever reaches the browser bundle or
+   `.base44/environment.json` — every `VITE_*` variable is inlined into the
+   bundle. Rules 5 and 6 describe the Reference Profile; the Base44 equivalents
+   are version-guarded conditional writes plus reconciliation, defined in
+   `docs/architecture/base44-implementation-profile-v1.md`, which is where any
+   agent implementing v1 must look first.
+9. **The docker-compose Base44 preview harness remains a preview harness.** It
+   mounts `./frontend` and is unrelated to the Base44 application substrate.
 
 ## Backend structure
 

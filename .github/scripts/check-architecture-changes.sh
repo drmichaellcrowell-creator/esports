@@ -5,6 +5,10 @@
 # The canonical architecture is authoritative and is not edited during ordinary
 # implementation work. This check makes that a build failure rather than advice.
 #
+# The same protection covers the substrate profile documents. They are where the
+# only permitted deviations from the canonical contract are written down, so an
+# edit to one can weaken a guarantee exactly as an edit to the contract can.
+#
 # A dedicated architecture-amendment pull request is the intended exception, and
 # it must be declared deliberately: apply the `architecture-amendment` label.
 # The label is the whole escape hatch — there is no environment variable, commit
@@ -33,7 +37,20 @@ PR_LABELS="${PR_LABELS:-}"
 
 # Paths the guard protects. Anchored, so `docs/architecture/notes.md` and
 # anything outside docs/architecture/ is unaffected.
-CANONICAL_PATTERN='^docs/architecture/(implementation-contract\.md|implementation-handoff\.md|amendments/.+)$'
+#
+#   implementation-contract.md          the canonical architecture
+#   implementation-handoff.md           how it is to be implemented
+#   amendments/**                       amendments to the canonical architecture
+#   base44-implementation-profile-v1.md the active v1 substrate profile — the
+#                                       only place deviations from the contract
+#                                       are permitted to exist
+#   reference-profile-status.md         the preserved Reference Profile's
+#                                       disposition, including deferred checks
+#
+# Profile filenames are matched exactly, not by prefix: a future
+# base44-implementation-profile-v2.md is deliberately NOT covered until it is
+# added here, so introducing a new profile is itself a visible decision.
+CANONICAL_PATTERN='^docs/architecture/(implementation-contract\.md|implementation-handoff\.md|base44-implementation-profile-v1\.md|reference-profile-status\.md|amendments/.+)$'
 
 if [ "${EVENT_NAME}" != 'pull_request' ]; then
   echo "architecture guard: not a pull_request event (${EVENT_NAME:-none}) — not applicable"

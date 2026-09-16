@@ -4,6 +4,14 @@
 
 **`implementation-contract.md`** is the sole source of truth for implementation. It contains the complete, corrected, final architecture as of the Cross-Domain Integration Readiness Final Verification Gate (Verdict: A — READY FOR IMPLEMENTATION HANDOFF).
 
+### 1.1 The active v1 substrate profile
+
+The contract is the full-strength **Reference Profile**. The active v1 is implemented on Base44, which cannot provide every guarantee the contract specifies. **Before implementing anything for the active v1, read `base44-implementation-profile-v1.md` in full.** It records — explicitly, and as the only permitted deviations — which canonical guarantees v1 implements differently, what the v1 scope is, and what may never be weakened.
+
+Precedence is exact and does not change: the contract governs; the profile narrows and never widens; **where the profile is silent, the contract governs**. A deviation not written in the profile's deviation register does not exist — stop and request an architecture decision rather than inferring one, exactly as Section 3 below requires.
+
+`reference-profile-status.md` records the disposition of the preserved PostgreSQL/Supabase Reference Profile. **No hybrid runtime is authorized.**
+
 ## 2. What is historical provenance only
 
 Every prior phase document, correction gate, infrastructure gate, and review gate (Phases 1A–1D, 2A–2I, the AuditLog gate, the Durable Outbox gate, all correction rounds, and the Cross-Domain Review and its revisions) is **design history, not implementation instruction**. Where any of them appears to say something different from the contract, **the contract wins**. Do not read them to resolve an implementation question — the contract's Section 12 traceability appendix exists only to explain *where* a rule came from, not to override it.
