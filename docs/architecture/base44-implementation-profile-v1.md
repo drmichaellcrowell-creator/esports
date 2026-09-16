@@ -137,6 +137,7 @@ authenticated actor
 - **Competition / Matches** — Competition and provider/offering/ruleset records, TeamSeasonCompetitionEntry, ExternalOpponent, Match, MatchParticipant, OrganizationMatchEvent, MatchSchedule, MatchLineupEntry, MatchParticipantLineupLock, MatchSegment, ProvisionalResultSubmission, MatchParticipation, AcceptedResult, PlayerCompetitiveResult, and the non-shared match projections — **single-Organization matches and matches against an `ExternalOpponent` only**.
 - **Equipment** — EquipmentAssetType, EquipmentAsset, EquipmentAssetAllocation, EquipmentAssignment, EquipmentConditionAssessment, EquipmentIssueReport, EquipmentServiceRecord, EquipmentProjection.
 - **Eligibility** — EligibilityRequirement, EligibilityEvaluation, EligibilityStatusProjection, and the eligibility combination computation.
+- **Restriction — included only to the extent required by canonical lineup and participation gating.** `ParticipationRestriction` and `RestrictionReview`, with the operations `restriction.create` and `restriction.review`, exist in v1 solely so that the restriction-clear leg of `lineup.lock`'s canonical precondition can actually be evaluated. See Section 3.4 for the exact boundary. **This admits no Conduct or disciplinary functionality of any kind.**
 - **Development, except `PrivateCoachNote`** — PlayerDevelopmentProfile, Goal, SkillEvaluation, CoachFeedback, PlayerReflection, DevelopmentEvidenceLink, DevelopmentCheckpoint, PlayerDevelopmentProfileProjection.
 - **Operational administration and audit** necessary for the above, in the degraded form Section 6 defines.
 
@@ -159,23 +160,30 @@ Named here so that no agent has to guess. These are outside v1 because nothing i
 - **Accountability** — `AccountabilityExpectation`, `AccountabilityRecord`. (`AccountabilityConcernReport` is separately and explicitly excluded with Conduct.)
 - **Competitive Tier** — the whole domain, including `CompetitiveTierAssessment`, its framework/adoption records, and both tier projections. Contract Section 6 places it after Competition and Eligibility; it is not required by anything admitted above.
 
-### 3.4 Derived scope consequence requiring ratification — Restriction
+### 3.4 Restriction — ratified derived inclusion, and its exact boundary
 
-`lineup.lock`'s preconditions in Contract Section 4 are *"roster validity + eligibility = eligible + restrictions clear + ruleset constraints, all atomically"*, and Contract Section 7 makes this a four-way gate. `lineup.lock` is inside v1 scope (Competition / Matches, and it appears in the required operation adapter boundary, Section 10 below). **`ParticipationRestriction` and `RestrictionReview` are therefore admitted into v1 as a derived consequence of admitting `lineup.lock`** — not as an independent scope expansion.
+**Ratified.** `ParticipationRestriction` and `RestrictionReview` are included in Base44 v1 as a **derived consequence of `lineup.lock` being in scope**, not as an independent scope expansion.
 
-The alternative — running `lineup.lock` with the restriction leg of its gate unevaluated — would silently weaken a security gate, which Section 0 rule 4 prohibits.
+**Why.** `lineup.lock`'s preconditions in Contract Section 4 are *"roster validity + eligibility = eligible + restrictions clear + ruleset constraints, all atomically"*, and Contract Section 7 makes this a four-way gate. `implementation-handoff.md` Section 4 states the same dependency independently: *"Do not build Phase 4's `lineup.lock` operation before Phase 5's Eligibility/Restriction domains exist — the operation's own atomicity requirement (Contract Section 7) makes this a hard blocker, not a convenience ordering."*
 
-Constraints on that admission:
+**The ratified decision is that `lineup.lock` will not ship with the restriction-clear leg unevaluated.** The alternative — running the gate with one leg vacuous — is a silent weakening of a named security gate, which Section 0 rule 4 prohibits.
 
-- `restriction.create` / `restriction.review` remain OrgAdmin-only, exactly as the contract states.
-- `ParticipationRestriction.source_type` / `source_reference_id` provenance remains mandatory (Global Invariant 9). **Conduct-sourced provenance is structurally unavailable in v1**, because the Conduct domain is excluded — a v1 Restriction can only carry a source type whose domain is admitted.
-- `RestrictionReview.review_reason_code` remains a closed enum with no free-text rationale (Global Invariant 20, Prohibition 8).
+**The boundary is exact. Restriction is included only to the extent canonical lineup and participation gating requires:**
 
-`implementation-handoff.md` Section 4 already states the same dependency independently: *"Do not build Phase 4's `lineup.lock` operation before Phase 5's Eligibility/Restriction domains exist — the operation's own atomicity requirement (Contract Section 7) makes this a hard blocker, not a convenience ordering."*
+- **In scope:** creating a `ParticipationRestriction`, reviewing it through `restriction.review` (`continue | modify | revoke | expire`), reading a Player's own restrictions and a scoped coach's / OrgAdmin's view of them, and evaluating "restrictions clear" inside `lineup.lock`.
+- **Authority is unchanged.** `restriction.create` and `restriction.review` remain **OrgAdmin-only**. Coach and Captain gain nothing — Contract Section 3 already denies Coach any `RestrictionReview` access and Prohibition 5 already denies Captain restriction-review authority. Neither is relaxed.
+- **Provenance is mandatory.** `source_type` / `source_reference_id` are always preserved (Global Invariant 9), and a `modify | revoke | expire` review creates a superseding Restriction inheriting the original provenance, exactly as Contract Section 5 specifies.
+- **`RestrictionReview.review_reason_code` remains a closed enum** with no free-text rationale (Global Invariant 20, Prohibition 8).
 
-**This is flagged for explicit ratification rather than assumed.** If the product owner intends `lineup.lock` to ship in v1 *without* Restriction, that is a deliberate weakening of a named gate and needs its own decision; it is not something an implementation agent may choose.
+**What this does not admit — Conduct remains excluded.**
 
----
+- **Conduct-sourced provenance is structurally unavailable in v1.** The Conduct domain is excluded (Section 3.2), so no `ConductIncident` exists for a `source_reference_id` to point at. A v1 Restriction can only carry a `source_type` whose source domain is itself admitted.
+- **No `ConductIncident`, `ConductResponse` or `AccountabilityConcernReport`** is created, read, referenced or implied by anything in this inclusion.
+- **Prohibition 17 is unaffected and still binding:** no equipment damage, missing or overdue status, and no incomplete accountability record, may automatically create or imply a `ConductIncident`.
+- **Prohibition 8 is unaffected and still binding:** no narrative from a higher-sensitivity source may be copied into a Restriction or a review reason code.
+- Admitting the Conduct/disciplinary domain remains a **Reference Profile activation trigger** (Section 11) and requires its own architecture gate. This inclusion is not a step toward it.
+
+`ParticipationRestriction` and `RestrictionReview` are both `RestrictedStudent` in Contract Section 9, and that classification is unchanged.
 
 ## 4. Single-organization v1 posture
 
@@ -210,7 +218,7 @@ This is the complete list of places where Base44 v1 implements a canonical guara
 | 11 | Membership deactivation closes dependent grants in the same transaction | **DEVIATION — atomicity.** The cascade cannot be one transaction. Containment is twofold and both parts are mandatory: (a) the resolver checks Membership liveness at decision time and refuses any grant whose Membership is inactive (Section 2.3), so an un-cascaded grant confers nothing; (b) the *grants attached to inactive Membership* sweep (Section 7) closes the residue. Reactivation still restores Membership standing only — closed grants are never resurrected. Membership remains a single enduring row per `(user_id, organization_id)`. |
 | 12 | Safe projections are the only cross-role / cross-sensitivity path | **Held.** Projection field sets remain frozen per Contract Section 8, minus the excluded shared projections. |
 | 13 | AuditLog required, atomic with the domain change, append-only, HighlyRestricted | **DEVIATION — atomicity and append-only enforcement.** See Section 6. Audit remains required, server-only, and `HighlyRestricted`; it is **not** atomic with the domain change and **not** tamper-proof. |
-| 14 | Durable Outbox, at-least-once, idempotent, crash-recoverable | **Not applicable in v1 — no Outbox exists.** Communication is excluded (Section 3.2), so no v1 operation has asynchronous downstream work. See Section 8 for the one operation this affects and the posture for readmission. |
+| 14 | Durable Outbox, at-least-once, idempotent, crash-recoverable | **Not applicable in v1 — no Outbox exists.** Communication is excluded (Section 3.2), so no v1 operation has asynchronous downstream work. The single operation whose Outbox column reads `Required` outright, `match_schedule.supersede`, is a **ratified scoped deviation** — see Section 8.1. |
 | 15 | Domain change + AuditLog + Outbox commit or fail together | **Vacuous in v1.** Exactly three of the contract's thirty-three operations require both Audit and Outbox — `announcement.publish`, `announcement.correct` and `match_schedule.supersede`. The first two are excluded with Communication; the third is handled in Section 8. No v1 operation is subject to Invariant 15, so v1 neither satisfies nor violates it — and **no implementation may cite that as licence to split an audit write it could have kept together.** |
 | 16 | No client-authored actor identity, outcome, policy version, scope, or resource identity | **Held.** All server-derived inside backend functions. |
 | 17 | Backend/internal-only entities have no client-facing CRUD path | **Held**, empirically (Section 2.4). |
@@ -293,7 +301,15 @@ Every other checklist item — schema correctness, authorization, Organization i
 
 ### 5.6 Implementation Prohibitions (Contract Section 10)
 
-**All twenty-two prohibitions remain in force, unchanged and unrelaxed.** Prohibitions concerning excluded domains (5's conduct clauses, 8's ConductIncident/PrivateCoachNote clauses, 13 and 14's `SharedCompetition` clauses, 16's Notification clauses) are satisfied vacuously in v1 and become live again the moment their domain is admitted. Prohibition 12 — *never commit a domain mutation whose audit write failed* — cannot be enforced by rollback here; its v1 form is in Section 6.
+**All twenty-two prohibitions remain in force, unchanged and unrelaxed.**
+
+Prohibitions whose subject matter is entirely outside v1 — 5's conduct clauses, 13 and 14's `SharedCompetition` clauses, 16's Notification clauses — are satisfied vacuously and become live again the moment their domain is admitted.
+
+**Prohibition 8 is live, not vacuous.** Its `ConductIncident` / `ConductResponse` / `PrivateCoachNote` *sources* are excluded from v1, but its two in-scope destinations are not: `RestrictionReview.review_reason_code` must remain a closed enum (Restriction is in scope — Section 3.4), and `EligibilityEvaluation` must use a typed `source_reference` + `reason_code` and never free text. Its *"raw academic detail"* source is also in scope through Eligibility. Only the Notification `template_parameters` clause is vacuous.
+
+**Prohibitions 17 and 19 are likewise live**, because Equipment, Eligibility and Restriction are all in v1: no equipment damage, missing or overdue status, and no incomplete accountability record, may automatically create or imply a `ConductIncident` — and in v1 there is no `ConductIncident` to create, which makes any code that tries to a defect rather than a policy question.
+
+Prohibition 12 — *never commit a domain mutation whose audit write failed* — cannot be enforced by rollback here; its v1 form is in Section 6.3.
 
 ---
 
@@ -367,6 +383,7 @@ Prohibition 12's v1 form: the audit write is attempted **before** the operation'
 | R10 | Sweep heartbeat gap | A sweep that failed, was missed, or stalled — Section 2.5 | **No** | **Always** if a sweep has missed more than one expected run, or failed twice consecutively. | Every 5 minutes |
 | R11 | Incomplete provisioning | An Organization left in the non-effective provisioning state past a bounded age — Section 5.3 | **No.** Never silently completed. | **Always.** | Hourly |
 | R12 | Outbox / notification inconsistency | Reserved. Not implemented in v1 because Communication is excluded. **Mandatory before Communication is admitted** (Section 8). | — | — | — |
+| R13 | Multiple-current ParticipationRestriction | More than one `is_current` `ParticipationRestriction` per subject/key. Required because Restriction is in v1 (Section 3.4) and gates `lineup.lock`: two disagreeing current restrictions make that gate nondeterministic, which is a fail-open risk, not a cosmetic one | **No** | **Always.** Choosing which restriction is current is a participation decision about a student, never a sweep's to make | Hourly |
 
 Cadences above are the frozen *maximum* interval for each sweep's class. A shorter interval is an operational decision; a longer one is an architecture decision.
 
@@ -396,11 +413,19 @@ If and when Communication enters Base44 scope, all of the following are required
 
 **Do not claim same-transaction domain + audit + outbox atomicity.** It does not exist here and cannot be added by any amount of application code.
 
-### 8.1 The one v1 operation this affects
+### 8.1 `match_schedule.supersede` — ratified v1 Outbox deviation
 
-`match_schedule.supersede` is the only in-scope operation whose Outbox column in Contract Section 4 reads `Required` rather than *"if Notification required"*. Its Outbox row exists to drive a downstream schedule-change Notification.
+`match_schedule.supersede` is the only in-scope operation whose Outbox column in Contract Section 4 reads `Required` outright rather than *"if Notification required"*. Its Outbox row exists to drive a downstream schedule-change Notification.
 
-**v1 disposition — explicit deviation:** because Communication is excluded, `match_schedule.supersede` in v1 writes the superseding MatchSchedule and its audit record and produces **no OutboxEvent**. The schedule change is surfaced by read-time derivation in the UI, not by push. **Readmitting Communication restores the Outbox requirement to this operation**; that is part of the Communication gate, not optional cleanup.
+**Ratified deviation:** **`match_schedule.supersede` produces no `OutboxEvent` in Base44 v1 while Communication/Notification is excluded from v1 scope.**
+
+Recorded explicitly, because each part is load-bearing:
+
+1. **The domain mutation and the operational AuditLog record remain required.** The old `MatchSchedule` is superseded, the new one is created, and the audit record is written with the operation's correlation id (Section 6.1). Nothing about the operation's own behaviour is relaxed — only the downstream side effect is absent. The ordered, guarded, correlated pattern of Section 5.2 applies to it unchanged.
+2. **There is no notification or outbox side effect because no Communication consumer exists in v1.** The Outbox row is not omitted because it is inconvenient or because Base44 cannot write it; it is omitted because Communication is out of scope, so the row would have no consumer, no delivery path, and no downstream effect to be idempotent about. Writing an unconsumed queue row would be a false claim of durability, not a partial guarantee. Schedule changes reach people by read-time derivation in the UI.
+3. **Admitting Communication automatically reopens this requirement**, and doing so requires the **dedicated Communication architecture gate** together with every element frozen in Section 8 above — an application-owned Outbox entity, idempotency keys, explicit attempt state, stale and failed detection, duplicate-safe downstream effects, and sweep R12. The requirement is not reopened by an implementation decision, and the gate may not shorten that list.
+
+**This is a scoped profile deviation, not a canonical-contract rewrite.** Contract Section 4's `Required` cell and Contract Section 7's `match_schedule.supersede` transaction row are unchanged and remain the full-strength Reference Profile behaviour. What is scoped is what **Base44 v1** implements, for exactly as long as Communication is out of v1.
 
 Every other in-scope operation's Outbox column is conditional on a Notification that v1 does not have, so no other operation is affected.
 
@@ -463,6 +488,12 @@ This table is illustrative of the *mapping discipline*, not an exhaustive v1 ope
 
 `policy.bootstrap`, `policy.activate` and `organization.provision` are **operator entrypoints** and must not be reachable from the client-facing surface in any form (Prohibition 18). They get no adapter operation, no route, and no UI affordance. The surface is **absent, not guarded**.
 
+### 10.4 A CI boundary check the first implementation gate must resolve
+
+CI's *"Frontend must not depend on Base44"* boundary check fails the build if `@base44` appears in `frontend/package.json` or `frontend/src`. It was written when Base44 was only a preview harness, and it is **correct and enforcing today** — no v1 code exists, so nothing legitimately needs that dependency.
+
+It is recorded here because the first gate that wires the operation adapter to Base44 will have to decide where the adapter lives and what that check should then assert. **Resolving it is that gate's work, not this one's, and the check is not to be relaxed in the meantime.** Whatever that gate decides, the rule in Section 10.1 is unaffected: the frontend depends on operation contracts and types, never on Base44 persistence semantics.
+
 ---
 
 ## 11. Reference Profile activation triggers
@@ -512,9 +543,13 @@ Listed so no future deviation can be argued into existence by silence:
 
 ---
 
-## 14. Open items requiring ratification
+## 14. Ratification record
 
-These are recorded rather than resolved, because resolving them unilaterally would exceed this gate's authority.
+Both items this profile originally raised for decision have been ratified. **No item in this profile is awaiting ratification.**
 
-1. **Restriction admission (Section 3.4).** `ParticipationRestriction` / `RestrictionReview` are admitted as a derived consequence of `lineup.lock` being in scope. Confirm, or exclude Restriction and accept an explicitly weakened `lineup.lock` gate as a separate decision.
-2. **`match_schedule.supersede` without an Outbox row (Section 8.1).** Confirm that schedule changes surface by read-time derivation in v1.
+| # | Decision | Outcome | Where it lives |
+|---|---|---|---|
+| 1 | **Restriction domain** — `ParticipationRestriction` and `RestrictionReview` admitted as a derived consequence of `lineup.lock` being in scope | **Approved**, bounded to canonical lineup and participation gating. `lineup.lock` will not ship with the restriction-clear leg unevaluated. Conduct remains excluded and is not broadened by this. | Sections 3.1, 3.4 |
+| 2 | **`match_schedule.supersede` Outbox behaviour** — no `OutboxEvent` while Communication is excluded | **Approved** as a scoped profile deviation. Domain mutation and operational AuditLog remain required; no side effect exists because no consumer exists; admitting Communication reopens the requirement and needs the dedicated Communication gate. | Sections 5.1 (Invariant 14), 8.1 |
+
+A future item that requires a decision is added to this table by an architecture gate, not by an implementation agent. An implementation agent that believes it needs one stops and requests the gate (Section 0).
