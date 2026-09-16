@@ -179,7 +179,7 @@ Named here so that no agent has to guess. These are outside v1 because nothing i
 
 - **Conduct-sourced provenance is structurally unavailable in v1.** The Conduct domain is excluded (Section 3.2), so no `ConductIncident` exists for a `source_reference_id` to point at. A v1 Restriction can only carry a `source_type` whose source domain is itself admitted.
 - **No `ConductIncident`, `ConductResponse` or `AccountabilityConcernReport`** is created, read, referenced or implied by anything in this inclusion.
-- **Prohibition 17 is unaffected and still binding:** no equipment damage, missing or overdue status, and no incomplete accountability record, may automatically create or imply a `ConductIncident`.
+- **Prohibition 17 is unaffected and still binding:** no equipment damage, missing or overdue status may automatically create or imply a `ConductIncident` — and in v1 there is none to create.
 - **Prohibition 8 is unaffected and still binding:** no narrative from a higher-sensitivity source may be copied into a Restriction or a review reason code.
 - Admitting the Conduct/disciplinary domain remains a **Reference Profile activation trigger** (Section 11) and requires its own architecture gate. This inclusion is not a step toward it.
 
@@ -307,7 +307,7 @@ Prohibitions whose subject matter is entirely outside v1 — 5's conduct clauses
 
 **Prohibition 8 is live, not vacuous.** Its `ConductIncident` / `ConductResponse` / `PrivateCoachNote` *sources* are excluded from v1, but its two in-scope destinations are not: `RestrictionReview.review_reason_code` must remain a closed enum (Restriction is in scope — Section 3.4), and `EligibilityEvaluation` must use a typed `source_reference` + `reason_code` and never free text. Its *"raw academic detail"* source is also in scope through Eligibility. Only the Notification `template_parameters` clause is vacuous.
 
-**Prohibitions 17 and 19 are likewise live**, because Equipment, Eligibility and Restriction are all in v1: no equipment damage, missing or overdue status, and no incomplete accountability record, may automatically create or imply a `ConductIncident` — and in v1 there is no `ConductIncident` to create, which makes any code that tries to a defect rather than a policy question.
+**Prohibition 17 is likewise partly live**, because Equipment, Eligibility and Restriction are all in v1. Its equipment clauses bind — a `damaged` condition state, a `missing` asset, or an overdue assignment may never create or imply a `ConductIncident` — and in v1 there is no `ConductIncident` for such code to create at all, which makes any attempt a defect rather than a policy question. Its `AccountabilityRecord` clause is vacuous, that entity being outside v1 (Section 3.3). Global Invariant 19 binds across Equipment and Eligibility, its two in-scope domains.
 
 Prohibition 12 — *never commit a domain mutation whose audit write failed* — cannot be enforced by rollback here; its v1 form is in Section 6.3.
 
