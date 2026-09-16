@@ -78,3 +78,105 @@ describe('environment validation fails closed', () => {
     }
   })
 })
+
+describe('database identity separation', () => {
+  const BASE = {
+    SUPABASE_JWT_ISSUER: 'https://project.supabase.co/auth/v1',
+    SUPABASE_JWKS_URL: 'https://project.supabase.co/auth/v1/.well-known/jwks.json',
+  } as const
+  const api = 'postgresql://app_api:PLACEHOLDER@db.example.com:5432/postgres'
+  const provisioner = 'postgresql://app_provisioner:PLACEHOLDER@db.example.com:5432/postgres'
+  const migrator = 'postgresql://app_migrator:PLACEHOLDER@db.example.com:5432/postgres'
+
+  it('accepts the intended three distinct identities', () => {
+    const env = loadEnv({
+      ...BASE,
+      DATABASE_URL: api,
+      PROVISIONER_DATABASE_URL: provisioner,
+      MIGRATION_DATABASE_URL: migrator,
+    })
+    expect(env.DATABASE_URL).not.toBe(env.PROVISIONER_DATABASE_URL)
+    expect(env.DATABASE_URL).not.toBe(env.MIGRATION_DATABASE_URL)
+    expect(env.MIGRATION_DATABASE_URL).not.toBe(env.PROVISIONER_DATABASE_URL)
+  })
+
+  it.each([
+    ['DATABASE_URL', 'PROVISIONER_DATABASE_URL'],
+    ['DATABASE_URL', 'MIGRATION_DATABASE_URL'],
+  ])('rejects %s equal to %s', (first, second) => {
+    expect(() =>
+      loadEnv({ ...BASE, [first]: api, [second]: api } as Record<string, string>),
+    ).toThrow(EnvironmentValidationError)
+  })
+
+  it('rejects migration and provisioner sharing one credential', () => {
+    expect(() =>
+      loadEnv({
+        ...BASE,
+        DATABASE_URL: api,
+        MIGRATION_DATABASE_URL: provisioner,
+        PROVISIONER_DATABASE_URL: provisioner,
+      }),
+    ).toThrow(EnvironmentValidationError)
+  })
+
+  describe('the API refuses a credential that is not its own', () => {
+    it.each([
+      ['app_provisioner', provisioner],
+      ['app_migrator', migrator],
+      ['app_owner', 'postgresql://app_owner:PLACEHOLDER@db.example.com:5432/postgres'],
+    ])('refuses to start the API as %s', (role, url) => {
+      expect(() => loadEnv({ ...BASE, DATABASE_URL: url })).toThrow(
+        new RegExp(`must not connect as "${role}"`),
+      )
+    })
+
+    it.each([
+      ['app_provisioner', provisioner],
+      ['app_migrator', migrator],
+    ])('refuses to start the worker as %s', (_role, url) => {
+      expect(() =>
+        loadEnv({ ...BASE, DATABASE_URL: api, WORKER_DATABASE_URL: url }),
+      ).toThrow(EnvironmentValidationError)
+    })
+
+    it('recognises the pooled username form role.project-ref', () => {
+      // Through the connection pooler the username carries a project reference.
+      expect(() =>
+        loadEnv({
+          ...BASE,
+          DATABASE_URL:
+            'postgresql://app_provisioner.YOUR_PROJECT_REF:PLACEHOLDER@aws-0-us-east-1.pooler.supabase.com:5432/postgres',
+        }),
+      ).toThrow(/must not connect as "app_provisioner"/)
+    })
+
+    it('accepts the pooled username form for app_api', () => {
+      const env = loadEnv({
+        ...BASE,
+        DATABASE_URL:
+          'postgresql://app_api.YOUR_PROJECT_REF:PLACEHOLDER@aws-0-us-east-1.pooler.supabase.com:5432/postgres',
+      })
+      expect(env.DATABASE_URL).toContain('app_api')
+    })
+
+    it('refuses a platform administrative role in production', () => {
+      expect(() =>
+        loadEnv({
+          ...BASE,
+          NODE_ENV: 'production',
+          DATABASE_URL: 'postgresql://postgres:PLACEHOLDER@db.example.com:5432/postgres',
+        }),
+      ).toThrow(/must not connect as "postgres" in production/)
+    })
+
+    it('allows a platform role outside production, for local development', () => {
+      const env = loadEnv({
+        ...BASE,
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://postgres:PLACEHOLDER@127.0.0.1:5432/postgres',
+      })
+      expect(env.NODE_ENV).toBe('development')
+    })
+  })
+})
