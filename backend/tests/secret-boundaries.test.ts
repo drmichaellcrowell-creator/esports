@@ -9,8 +9,21 @@ import { describe, expect, it } from 'vitest'
  * The frontend bundle is public: Vite inlines every VITE_* variable into
  * JavaScript the browser downloads. The Base44 preview harness is a third-party
  * surface. Neither may carry a database credential or a backend secret.
+ *
+ * Base44 is now the active v1 substrate, so the frontend legitimately depends
+ * on its SDK — confined to one adapter directory, per profile Section 10.1.
+ * Nothing else about these boundaries moved: Supabase and database access are
+ * still forbidden the browser outright, and the SDK's presence is checked here
+ * to be *confined*, not merely tolerated.
  */
 const REPO = fileURLToPath(new URL('../..', import.meta.url))
+
+/**
+ * The single directory in the frontend permitted to import the Base44 SDK or
+ * construct a substrate client. Kept in step with
+ * `.github/scripts/check-frontend-base44-boundary.sh`.
+ */
+const FRONTEND_ADAPTER_DIR = path.join('frontend', 'src', 'infrastructure', 'base44')
 
 const CREDENTIAL_SHAPES: readonly [string, RegExp][] = [
   ['a postgres connection string with a password', /postgres(ql)?:\/\/[^\s'"]*:[^\s'"@]+@/],
@@ -53,20 +66,68 @@ describe('the frontend never receives backend secrets', () => {
     }
   })
 
-  it('has no Supabase data client dependency', async () => {
-    const pkg = await readFile(path.join(REPO, 'frontend', 'package.json'), 'utf8')
-    expect(pkg).not.toContain('@supabase/')
-    expect(pkg).not.toContain('@base44')
-    expect(pkg).not.toContain('pg')
+  it('has no Supabase or database client dependency', async () => {
+    // Checked against declared dependency names rather than the file's text: a
+    // substring search over package.json reports a match for any package whose
+    // name happens to contain 'pg', and misses nothing it would otherwise catch.
+    const pkg = JSON.parse(
+      await readFile(path.join(REPO, 'frontend', 'package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
+    const declared = [
+      ...Object.keys(pkg.dependencies ?? {}),
+      ...Object.keys(pkg.devDependencies ?? {}),
+    ]
+
+    for (const forbidden of ['pg', 'postgres', 'drizzle-orm', 'knex']) {
+      expect(declared, `frontend must not depend on ${forbidden}`).not.toContain(forbidden)
+    }
+    expect(declared.filter((name) => name.startsWith('@supabase/'))).toEqual([])
+  })
+
+  it('confines the Base44 SDK to the one adapter directory', async () => {
+    // Base44 is the active v1 substrate, so the SDK is permitted — in exactly
+    // one place. Pages, components, hooks and application modules depend on the
+    // operation contract, never on the substrate (profile Section 10.1).
+    const files = await sourceFiles(path.join(REPO, 'frontend', 'src'), ['.ts', '.tsx'])
+    expect(files.length).toBeGreaterThan(0)
+
+    for (const file of files) {
+      const contents = await readFile(file, 'utf8')
+      if (!contents.includes('@base44')) {
+        continue
+      }
+      expect(file, 'the Base44 SDK may be imported only by the adapter').toContain(
+        FRONTEND_ADAPTER_DIR,
+      )
+    }
   })
 
   it('makes no direct Supabase or database call', async () => {
     const files = await sourceFiles(path.join(REPO, 'frontend', 'src'), ['.ts', '.tsx'])
     for (const file of files) {
       const contents = await readFile(file, 'utf8')
-      expect(contents, `${file} must not use a Supabase client`).not.toMatch(
-        /@supabase\/|createClient\s*\(/,
+      // Unchanged: the browser never reaches Supabase or a database, whatever
+      // the active application substrate is (Option B).
+      expect(contents, `${file} must not use a Supabase client`).not.toMatch(/@supabase\//)
+
+      // A substrate client may be constructed only by the adapter. Outside it,
+      // this is the same ban it has always been.
+      if (!file.includes(FRONTEND_ADAPTER_DIR)) {
+        expect(contents, `${file} must not construct a substrate client`).not.toMatch(
+          /createClient\s*\(/,
+        )
+      }
+    }
+  })
+
+  it('never lets the browser reach elevated substrate access', async () => {
+    const files = await sourceFiles(path.join(REPO, 'frontend', 'src'), ['.ts', '.tsx'])
+    for (const file of files) {
+      const contents = await readFile(file, 'utf8')
+      expect(contents, `${file} must not reach elevated access`).not.toMatch(
+        /asServiceRole|createClientFromRequest|serviceToken/,
       )
+      expect(contents, `${file} must not access entities directly`).not.toMatch(/\.entities\b/)
     }
   })
 })
