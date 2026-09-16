@@ -321,3 +321,82 @@ Phase 0B establishes the substrate only. Still absent, by design:
 - The centralized authorization resolver, which still throws.
 - Any table-level grant to `app_api` or `app_provisioner` — each will be written
   explicitly alongside the table it concerns.
+
+---
+
+## Bootstrap record — `esports-platform`, completed
+
+The dashboard-only path was executed against the real project and verified.
+
+| Step | Outcome |
+|---|---|
+| `0000_infrastructure.sql` | applied |
+| `0001_database_roles.sql` (original) | **failed and rolled back**; 0 of 4 roles present afterwards |
+| `0001_database_roles.sql` (corrected) | applied |
+| `register-manual-migration.sql` | applied; two ledger records |
+| `verify-substrate.sql` | **28 rows, 28 PASS, 0 FAIL** |
+
+Environment as reported by the diagnostic's context row: SQL Editor connects as
+`postgres` with `superuser=false`, `createrole=true`, on PostgreSQL 17.6.
+
+### The non-superuser compatibility fix
+
+That context row is the whole story. The project owner holds `CREATEROLE` but not
+`SUPERUSER`, and PostgreSQL refuses to let such a role set the `SUPERUSER`,
+`REPLICATION` or `BYPASSRLS` attributes at all — even to turn them off. The
+original migration set all three explicitly and failed on its first `ALTER ROLE`.
+
+The correction was to stop *setting* those three and start *asserting* them,
+raising an exception that names the offending role. A bare `CREATE ROLE` already
+yields all three as false, so the intended state is reached either way, and
+asserting is the stronger posture: setting would silently normalise a role that
+had been elevated elsewhere. Two further operations — transferring schema
+ownership and declaring default privileges `FOR ROLE app_owner` — needed
+`GRANT app_owner TO <current_user> WITH SET TRUE`, because on PostgreSQL 16+ the
+automatic grant that comes with `CREATEROLE` carries `ADMIN` but not `SET`.
+
+The failure was reproduced locally by simulating a `CREATEROLE`-without-`SUPERUSER`
+role before the fix was written, and the fix verified under the same simulation.
+The one difference between the simulation and the project was the wording of the
+error `DETAIL`, which differs between PostgreSQL 16 and 17 for the same check.
+
+### What the 28 passing checks establish
+
+Schema `app` exists and is owned by `app_owner`; all four authorities exist with
+the designed attributes; `app_migrator` is a member of `app_owner` while
+`app_api` and `app_provisioner` are members of nothing and of each other;
+`app_api` and `app_provisioner` hold `USAGE` and not `CREATE`; `PUBLIC`, `anon`,
+`authenticated`, `service_role` and `authenticator` hold nothing on `app`; no
+default privilege grants access; the Data API does not expose `app`; no Layer 0
+domain table exists; `app` and `public` contain no table at all; and the ledger
+holds both migrations with checksums matching the committed files.
+
+Supabase Auth was verified separately over HTTPS: the project publishes one
+active `ES256` signing key with `use: sig` and no private material, so no JWT
+migration or rotation is needed.
+
+---
+
+## Outstanding — two deferred runtime checks
+
+**These are deferred, not complete, and not dropped.**
+
+1. Transaction commit and rollback through the Session pooler **as `app_api`**.
+2. `FOR UPDATE SKIP LOCKED` under concurrency through the Session pooler **as
+   `app_api`**.
+
+Both require connecting *as `app_api` through the pooler*, which the SQL Editor
+cannot do — it connects as the project owner. They are about the behaviour of the
+configured **endpoint**, not about the logic: CI proves the identical code path
+against a disposable PostgreSQL on every run, and the structural posture they
+depend on is fully verified above.
+
+**What closes them:** run `npm run verify:substrate` from the first environment
+that legitimately holds the `app_api` credential in a secret store — CI or a
+deployment host. The tool already performs both checks and reports them by name.
+
+**Custom role passwords remain unset.** No password has been issued for
+`app_api`, `app_migrator` or `app_provisioner`. A `LOGIN` role without a password
+cannot authenticate, so the roles currently fail closed, which is the safer
+resting state. Issue them at the point of first use: `app_api` when closing the
+deferred checks above, `app_provisioner` not until Phase 0C.

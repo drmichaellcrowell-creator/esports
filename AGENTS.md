@@ -17,7 +17,7 @@ an architecture decision rather than inferring one.
 | Area | State |
 |---|---|
 | Frontend | Application shell — role-based navigation, placeholder pages, no data access |
-| Backend | Phase 0A substrate — API, worker, database and auth boundaries; **no domain model yet** |
+| Backend | Phase 0B substrate — API, worker, database and auth boundaries, plus the four database authorities provisioned and verified on the real project (28/28). **No domain model yet.** Two Session-pooler runtime checks remain deferred; see `docs/operations/supabase-bootstrap.md` |
 | Layer 0 domain | Not implemented. Organization, Membership, RoleAssignment, CoachScopeAssignment, CaptainAssignment, AuthorizationPolicyVersion, AuditLogEvent and OutboxEvent are Phase 0B |
 | Authorization | **Not implemented.** The resolver throws; there is no permissive placeholder, and no protected product route exists |
 
