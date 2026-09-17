@@ -31,6 +31,8 @@ export const OPERATION_REGISTRY = {
   assignCoachScope: 'scope.assign',
   revokeCoachScope: 'scope.revoke',
   assignCaptain: 'captain.assign',
+  inviteMembership: 'membership.invite',
+  activateMembership: 'membership.activate',
   deactivateMembership: 'membership.deactivate',
   moveRoster: 'roster.move',
   lockLineup: 'lineup.lock',
