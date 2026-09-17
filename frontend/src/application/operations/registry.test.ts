@@ -17,6 +17,8 @@ describe('operation registry', () => {
     expect(OPERATION_REGISTRY.revokeRole).toBe('role.revoke')
     expect(OPERATION_REGISTRY.assignCoachScope).toBe('scope.assign')
     expect(OPERATION_REGISTRY.assignCaptain).toBe('captain.assign')
+    expect(OPERATION_REGISTRY.inviteMembership).toBe('membership.invite')
+    expect(OPERATION_REGISTRY.activateMembership).toBe('membership.activate')
     expect(OPERATION_REGISTRY.deactivateMembership).toBe('membership.deactivate')
     expect(OPERATION_REGISTRY.moveRoster).toBe('roster.move')
     expect(OPERATION_REGISTRY.lockLineup).toBe('lineup.lock')
