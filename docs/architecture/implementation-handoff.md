@@ -42,7 +42,7 @@ If a genuine gap is found during implementation — something the contract neede
 Follow Contract Section 6 exactly. In sequence, not in parallel where a dependency exists:
 
 0. **Bootstrap** (Amendment 001): `policy.bootstrap` installs the first active `AuthorizationPolicyVersion`, **then** `organization.provision` performs tenant genesis. This order is mandatory — no protected operation may execute before a resolvable, hash-verified active policy version exists, and `organization.provision` is itself a protected operation. `policy.bootstrap` is the only operation in the architecture that runs outside the authorization resolver, and it is self-extinguishing.
-1. **Foundation**: Organization, Membership, RoleAssignment, CoachScopeAssignment, CaptainAssignment, the centralized authorization resolver, AuditLogEvent, OutboxEvent.
+1. **Foundation**: Organization, Membership, RoleAssignment, CoachScopeAssignment, CaptainAssignment, the centralized authorization resolver, AuditLogEvent, OutboxEvent. The Membership lifecycle operations (`membership.invite`, `membership.activate`, `membership.deactivate` — Amendment 002) are part of this layer.
 2. **Team/Roster**: Team, TeamSeason, RosterAssignment, OrganizationGameOffering, RosterDisplayProjection.
 3. **Events/Practice/Attendance** and **Equipment** (may proceed in parallel — both depend only on 1+2).
 4. **Competition/Match/Scoring/Results** (depends on 2 for Roster, 3 for OrganizationMatchEvent binding).
