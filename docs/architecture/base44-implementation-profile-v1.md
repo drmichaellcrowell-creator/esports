@@ -272,7 +272,7 @@ Amendment 001's semantics are **unchanged**. Its enforcement mechanism deviates.
 
 ### 5.4 Application-enforced integrity invariants (I1–I17)
 
-Amendment 001 places these in PostgreSQL *"because they must hold even when application code is wrong."* **Base44 provides no equivalent.** Every one of them becomes application-enforced in v1, which is a real reduction in assurance and the single largest reason the Reference Profile is preserved.
+I1–I13 originate in Amendment 001's PostgreSQL integrity model; I14–I17 are added by Amendment 003 for Layer 1. **Base44 provides no database-enforced equivalent for these constraints.** They are application-enforced and reconciled in v1, which is a real reduction in assurance and a primary reason the Reference Profile is preserved.
 
 | # | Invariant | v1 enforcement |
 |---|---|---|
@@ -474,7 +474,7 @@ Every portable domain object carries:
 - an **application-generated UUID** as its portable identity;
 - application-owned **`created_at`**, and **`updated_at`** where the entity's mutability model makes it meaningful;
 - an explicit **`created_by_user_id`** wherever provenance matters — never `created_by` email (Section 2.2);
-- **`organization_id`**;
+- explicit **`organization_id`** where the canonical entity carries it, or an immutable Organization-resolution chain where the contract deliberately omits a denormalized Organization field;
 - **correlation / operation ids** linking every record written by one operation;
 - immutable **`creation_request_id`** on Amendment-003 Class-A created resources, carrying durable logical request identity separately from execution correlation;
 - **supersession ids** (`supersedes_*_id`) per the entity's Contract Section 2 mutability model;
@@ -592,7 +592,7 @@ Listed so no future deviation can be argued into existence by silence:
 
 ## 14. Ratification record
 
-Both items this profile originally raised for decision have been ratified. **No item in this profile is awaiting ratification.**
+All architecture decisions listed below have been ratified. **No item in this profile is awaiting ratification.**
 
 | # | Decision | Outcome | Where it lives |
 |---|---|---|---|
