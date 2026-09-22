@@ -205,7 +205,7 @@ Absence of a row below = **deny**. All rows are additive across concurrently-hel
 | Operation/Entity | Scope/Context | Notes |
 |---|---|---|
 | Read own Membership/RoleAssignment/CoachScopeAssignment/CaptainAssignment | self | — |
-| Read Organization, Team, TeamSeason, RosterDisplayProjection | same_organization / viewer_team_season_member (roster projection) | — |
+| Read Organization, Team, TeamSeason, OrganizationGameOffering, RosterDisplayProjection | same_organization / viewer_team_season_member (roster projection) | — |
 | Read own EventParticipationExpectation/Adjustment, AvailabilityResponse, AttendanceRecord | self | — |
 | Create/update own AvailabilityResponse | self | — |
 | Read Event/Practice where a materialized Expectation exists | viewer_has_expectation | — |
@@ -230,6 +230,17 @@ Absence of a row below = **deny**. All rows are additive across concurrently-hel
 | Read EligibilityStatusProjection, ParticipationRestriction; create EligibilityEvaluation(`coach_operational_status` only); create ConductIncident, read own-reported only; create AccountabilityExpectation/Record | coach_scope_match | no ConductResponse authority; no RestrictionReview access |
 | Read/create EquipmentAssignment/ConditionAssessment/IssueReport/ServiceRecord from allocated pool; read EquipmentAsset(scope) | coach_scope_match, allocation-scoped | no allocation-management authority |
 | Author Announcement (Team/TeamSeason/Game/SelectedMembers only, never OrganizationWide); read own Notification/ActionCenter exception view | coach_scope_match | — |
+
+#### Layer 1 `coach_scope_match` containment (Amendment 003)
+
+For Team/Roster resources, Coach scope is evaluated centrally and additively:
+
+- `OrganizationWide` matches all Team, TeamSeason, RosterAssignment resources in the actor's Organization.
+- `Team` matches the Team, all child TeamSeasons, and their RosterAssignments.
+- `TeamSeason` matches that TeamSeason, its RosterAssignments, and later resources whose canonical scope chain passes through that TeamSeason.
+- `Game` remains a valid canonical scope type but is not assignable in Layer 1; no Game entity/catalog exists yet, and OrganizationGameOffering is not substituted for Game.
+
+For OrganizationGameOffering read, OrganizationWide scope matches all Offerings in the Organization; Team/TeamSeason scope matches the Offering whose `game_id` equals the scoped Team's `game_id`. Missing/orphaned scope targets, duplicate-current scope ambiguity, cross-Organization references, or no containment match deny.
 
 ### Organization Administrator
 | Operation/Entity | Scope/Context | Notes |
@@ -476,7 +487,8 @@ Every row below is one atomic transaction — partial commit is never acceptable
 | `organization.provision` (T-PROV) | Organization + Membership (`active`) + OrganizationAdministrator RoleAssignment + Organization-scoped AuditLog event — **no partial tenant is ever observable** |
 | Membership deactivation | Membership status transitioned in place (no new Membership row) + every dependent Role/Scope/Captain closure + AuditLog event(s) |
 | Roster move | old RosterAssignment close + new RosterAssignment create + CaptainAssignment cascade (if applicable) + AuditLog event |
-| Captain grant | 4-way prerequisite validation + CaptainAssignment create + AuditLog event |
+| TeamSeason completion | TeamSeason `active → completed` + every non-terminal child RosterAssignment → `completed` + affected CaptainAssignment closures + AuditLog event(s) |
+| Captain grant/replacement | 4-way prerequisite validation + prior current CaptainAssignment supersession (if any) + replacement CaptainAssignment create + AuditLog event |
 | Event expectation materialization | Event status transition + full EventParticipationExpectation set + AuditLog event (if required) + OutboxEvent (if Notification required) |
 | `lineup.lock` | 4-way validation (roster/eligibility/restriction/ruleset) + MatchParticipantLineupLock create + AuditLog event; Match.status re-derivation is a read-time consequence, not a separate write |
 | `match.start` / `match.mark_complete` / `match.cancel` | Match.status transition + AuditLog event |
