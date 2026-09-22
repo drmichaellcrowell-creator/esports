@@ -213,3 +213,43 @@ The current Base44 connector available in this chat supports creating/reading sa
 Slice 1C may be considered **implementation-complete but execution-gated** until `layer1_foundation_verification` is invoked through a supported Base44 execution surface and returns `allPassed: true`.
 
 Do not admit Layer 1 mutation operations before that execution gate is satisfied.
+
+
+## Slice 1C — Execution result
+
+Status: **PASSED — 25/25 read-only assertions successful.**
+
+**Verification function:** `layer1_foundation_verification_v2`  
+**Post-pass Base44 checkpoint:** `6ab305fae52900e318c4608e` (`31c51a37e4d854baae2e5efbdc3147b7a1e24862`)
+
+Execution result:
+
+- `verifier = layer1_foundation_verification_v2`
+- `readOnly = true`
+- `total = 25`
+- `passed = 25`
+- `failed = 0`
+- `allPassed = true`
+- `failures = []`
+
+Verified behaviors include:
+
+- OrganizationWide containment for Team/TeamSeason/Roster/Offering;
+- Team self/descendant containment and mismatch denial;
+- TeamSeason self/roster containment and parent/wrong-season denial;
+- Game-scope deferred denial;
+- Offering match/non-match by game identity;
+- duplicate-current CoachScope detection and fail-closed behavior;
+- preservation of matching `coach_scope_assignment_uuid`;
+- resolver `coach_scope` allow on positive server-computed match;
+- resolver deny on missing/false match;
+- existing `same_organization` behavior unchanged;
+- cross-Organization denial remains effective despite positive scope input.
+
+No runtime entity records were created, updated, or deleted by the verifier.
+
+### Slice 1C verdict
+
+`LAYER 1 SLICE 1C — PASSED`
+
+The foundation verification gate is closed. The project may proceed to the first controlled Layer 1 mutation slice. Mutation admission must remain incremental and must not activate unrelated Layer 1 operations.
