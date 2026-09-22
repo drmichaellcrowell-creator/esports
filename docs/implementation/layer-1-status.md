@@ -455,3 +455,131 @@ Post-verifier cleanup independently confirmed:
 `FIRST LAYER 1 MUTATION SLICE — TEAM — PASSED`
 
 The Team family is accepted. Proceed next to a separate OrganizationGameOffering mutation slice; do not combine it with TeamSeason/Roster/Captain cascades.
+
+
+## OrganizationGameOffering mutation slice — pre-activation staged
+
+Status: **staged; candidate policy not yet active.**
+
+**Pre-activation Base44 checkpoint:** `6ab30eaf164386b96bb884ab` (`dde2b26649572b9affa04d987052331678292b83`)
+
+### Operations staged
+
+New dispatcher keys:
+
+- `offering.create`
+- `offering.transition`
+
+Existing accepted Team keys remain:
+
+- `team.create`
+- `team.update`
+- `team.archive`
+
+No TeamSeason, RosterAssignment, or CaptainAssignment mutation key is admitted.
+
+### Offering semantics
+
+`offering.create`:
+- OrgAdmin only;
+- creates at `active`;
+- durable `creation_request_id`;
+- same request id + same material input replays prior logical result;
+- same request id + different material input conflicts;
+- canonical uniqueness is one row per `(organization_id, game_id)` regardless of status;
+- application-enforced pre-create uniqueness + Organization CAS fence;
+- post-create stable confirmation must still resolve to exactly one key row;
+- duplicate/ambiguous state fails closed and is not auto-repaired;
+- Organization-scoped audit required.
+
+`offering.transition`:
+- OrgAdmin only;
+- `active ⇄ inactive`;
+- exact target-state replay is success with no second domain mutation;
+- canonical key ambiguity fails closed;
+- version CAS + bounded stable-read confirmation;
+- Organization-scoped audit required.
+
+### Reconciliation
+
+R15 is implemented and wired into the regular reconciliation run:
+
+- detects more than one OrganizationGameOffering per `(organization_id, game_id)`;
+- detection-only;
+- writes StandardOperational operator-review finding;
+- no automatic repair.
+
+R10 now monitors R15 heartbeat.
+
+R9 domain collection now includes:
+
+- Team
+- OrganizationGameOffering
+
+This closes the previously missing Layer 1 entity coverage in the current R9 implementation, without redefining the broader existing limitation that in-place mutations retain their original row correlation id.
+
+### Candidate policy
+
+Staged candidate:
+
+- key: `esports_v1`
+- version: `1b-offering-ratified`
+- retains the accepted `1a-team-ratified` Team grants;
+- adds exactly:
+  - OrganizationGameOffering/create
+  - OrganizationGameOffering/transition
+- OrganizationAdministrator only;
+- same-Organization scope;
+- no TeamSeason/Roster/Captain mutation grants.
+
+Historical `1a-team-ratified` remains frozen in the registry.
+
+Current persisted active policy remains `1a-team-ratified`.
+
+### Verification staged
+
+`layer1_offering_policy_preflight`
+- read-only;
+- canonical candidate/registry hash + rule equality;
+- exactly two Offering mutation grants;
+- accepted Team grants retained;
+- no TeamSeason/Roster/Captain mutation grants;
+- confirms active policy still `1a-team-ratified`.
+
+`layer1_offering_mutation_verification`
+- synthetic-only;
+- invokes real production `execute_operation` path;
+- tests create, durable replay, request-id conflict, unique-key conflict, cross-org denial;
+- tests inactive transition, target-state idempotency, active transition;
+- verifies success audits;
+- directly injects one synthetic duplicate to prove dependent key lookup fails closed;
+- invokes R15 and verifies operator-review finding;
+- cleans its own synthetic fixtures/findings/heartbeats.
+
+### Pre-activation boundary audit
+
+Verified:
+
+- current active persisted policy = `1a-team-ratified`;
+- dispatcher Layer 1 keys = Team family + Offering family only;
+- candidate = `1b-offering-ratified`;
+- Offering candidate rule count = 2;
+- policy registry contains `1b-offering-ratified`;
+- read-only preflight contains no entity mutation calls;
+- mutation verifier does not mutate AuthorizationPolicyVersion;
+- mutation verifier contains no TeamSeason/Roster/Captain writes;
+- R15 is wired to reconciliation;
+- R9 includes Team + Offering;
+- R10 monitors R15;
+- all Team/Offering/TeamSeason/Roster/Captain entity counts remain 0 before verification.
+
+The Base44 shell workspace still does not expose `/workspace/package.json`, so `npm run typecheck` is unavailable there and was not treated as a code failure.
+
+## Next gate
+
+1. Run read-only `layer1_offering_policy_preflight`.
+2. Require `allPassed: true`.
+3. Only then activate `1b-offering-ratified` through production `policy.activate`.
+4. Verify one active policy and expected hash/version.
+5. Run `layer1_offering_mutation_verification`.
+6. Do not begin TeamSeason/Roster/Captain mutations until this slice passes.
