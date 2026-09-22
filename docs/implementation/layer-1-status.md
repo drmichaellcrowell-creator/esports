@@ -382,3 +382,27 @@ Read-only `layer1_team_policy_preflight` result:
 - failures: []
 
 Policy activation is now authorized for the candidate `1a-team-ratified` through the existing production `policy.activate` path only.
+
+
+## Team mutation policy activation — PASSED
+
+**Activation correlation:** `51716602-dedc-4f66-9b41-03eba0cdc7d7`  
+**Activated version:** `1a-team-ratified`  
+**Activated hash:** `d2daa3a72e60827627b70b9eaadfe8b0b2edcb639f97111da8a67622acba61bf`  
+**New policy UUID:** `4e48c67c-d014-406c-860a-487b803e33d0`  
+**Superseded policy UUID:** `5fbb73b6-8649-4db8-8e87-04bc5e1a4b49`
+
+**Post-activation Base44 checkpoint:** `6ab309d36e81263ff9ee6d64` (`24f8dfefc8038369f4a31f2cc110662f8d157a70`)
+
+Verified directly after activation:
+
+- exactly one active AuthorizationPolicyVersion;
+- active version = `1a-team-ratified`;
+- active hash = `d2daa3a72e60827627b70b9eaadfe8b0b2edcb639f97111da8a67622acba61bf`;
+- Team = 0 records;
+- TeamSeason = 0 records;
+- RosterAssignment = 0 records;
+- OrganizationGameOffering = 0 records;
+- CaptainAssignment = 0 records.
+
+The Team mutation acceptance harness may now run. Do not admit any additional Layer 1 mutation family until it passes.
