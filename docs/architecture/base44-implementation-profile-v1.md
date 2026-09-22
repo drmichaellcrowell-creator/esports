@@ -10,7 +10,7 @@
 Precedence, exactly:
 
 1. **`implementation-contract.md` remains the canonical, full-strength architecture.** This profile does not rewrite it, does not amend it, and does not make any of its statements false. The contract describes the target guarantees; this profile describes which of those guarantees the scoped Base44 v1 implements *differently*, and how the difference is contained.
-2. **Amendment 001 remains in force as written.** Its bootstrap semantics are unchanged; only their *enforcement mechanism* differs here, and every such difference is recorded in Section 5.
+2. **Amendments 001–003 remain in force as incorporated into the canonical contract.** Amendment 001 bootstrap semantics, Amendment 002 Membership lifecycle semantics, and Amendment 003 Layer 1 Team/Roster semantics are unchanged; this profile records only Base44-specific enforcement/recovery differences.
 3. **Where this profile is silent, the canonical contract governs.** Silence is never permission. In particular, silence never converts a contract prohibition into an allowance.
 4. **This profile may narrow, never widen.** A deviation recorded below may reduce what v1 implements or change how a guarantee is enforced. No deviation grants an actor authority the contract does not grant, exposes data the contract does not expose, or relaxes a Section 10 prohibition.
 
@@ -270,7 +270,7 @@ Amendment 001's semantics are **unchanged**. Its enforcement mechanism deviates.
 | Platform authority exhausted at provisioning commit | **Held**, unchanged (Prohibition 19). |
 | No break-glass | **Held**, unchanged (Prohibition 15). Nothing in this profile creates one. |
 
-### 5.4 Amendment 001 database-enforced invariants (I1–I13)
+### 5.4 Application-enforced integrity invariants (I1–I17)
 
 Amendment 001 places these in PostgreSQL *"because they must hold even when application code is wrong."* **Base44 provides no equivalent.** Every one of them becomes application-enforced in v1, which is a real reduction in assurance and the single largest reason the Reference Profile is preserved.
 
@@ -289,6 +289,10 @@ Amendment 001 places these in PostgreSQL *"because they must hold even when appl
 | I11 | Never zero OrgAdmins (deferred constraint + row lock) | Guard record + guarded write + **zero effective OrgAdmins sweep** (Section 5.3). |
 | I12 | Provisioning privilege separation — the API role holds no INSERT on organization/policy tables | **DEVIATION — no database grant exists.** Separation is by function boundary: only the operator-entrypoint provisioning function may create an Organization or a policy version, and no client-reachable route invokes it (Prohibition 18). *"A bug in an HTTP handler cannot create an Organization"* is downgraded from a database grant to a code boundary. This is a named loss of assurance. |
 | I13 | Audit actor coherence check constraints | Validated in the audit-writing helper; sweep detects incoherent rows. |
+| I14 | At most one non-terminal RosterAssignment per `(membership_id, team_season_id)` | Guarded create/move + member-level serialization + reconciliation of partial move state (R14). |
+| I15 | Canonical target: at most one current CaptainAssignment per `team_season_id` | Guarded AO+S replacement + TeamSeason-level serialization + fail-closed ambiguity + R4. Base44 does **not** claim an "at all times" structural guarantee. |
+| I16 | Unique OrganizationGameOffering per `(organization_id, game_id)` regardless of status | Guarded create + fail-closed duplicate resolution + R15. |
+| I17 | Completed TeamSeason implies all child RosterAssignments are `completed` and affected current CaptainAssignments are closed | Ordered cascade + version-guarded child writes + deterministic R16 repair. |
 
 ### 5.5 Implementation Verification Checklist (Contract Section 11)
 
@@ -319,6 +323,25 @@ Prohibitions whose subject matter is entirely outside v1 — 5's conduct clauses
 Prohibition 12 — *never commit a domain mutation whose audit write failed* — cannot be enforced by rollback here; its v1 form is in Section 6.3.
 
 ---
+
+### 5.7 Amendment 003 — Layer 1 Base44 recovery and ordering
+
+Amendment 003's canonical Team/Roster semantics are unchanged. The following are Base44-only containment mechanics for the non-atomic substrate.
+
+**RosterAssignment recovery metadata (profile-only):**
+
+- `last_operation_key` — required; most recent controlled operation key.
+- `last_operation_correlation_id` — required; execution correlation of the most recent mutation.
+- `last_operation_request_id` — nullable; durable request id for Class-A source-side mutation such as `roster.move`; null for Class-B mutations.
+- `last_operation_payload_hash` — nullable; server-computed from validated material input, never accepted from the client.
+
+For `roster.move`, the payload hash covers source RosterAssignment identity, destination TeamSeason identity, destination participation status, and `gamer_tag` when material. Source closes before destination create: transient "neither roster" is permitted; transient "both rosters" is not.
+
+**CaptainAssignment recovery metadata (profile-only):** the same four fields are admitted. On replacement `captain.assign`, the superseded old row records the request id and a server-computed payload hash covering TeamSeason identity + incoming Membership identity. Old current captain is superseded before the replacement is created: transient vacancy is permitted; two effective captains are not.
+
+**TeamSeason completion ordering:** Base44 transitions the TeamSeason to `completed` first, then completes each non-terminal child RosterAssignment with version guards, then closes affected captains. R16 detects/repairs any residue.
+
+All correctness-critical writes use application-owned version guards and bounded stable-read confirmation. These mechanisms do not create an ACID claim.
 
 ## 6. Audit posture
 
@@ -391,6 +414,10 @@ Prohibition 12's v1 form: the audit write is attempted **before** the operation'
 | R11 | Incomplete provisioning | An Organization left in the non-effective provisioning state past a bounded age — Section 5.3 | **No.** Never silently completed. | **Always.** | Hourly |
 | R12 | Outbox / notification inconsistency | Reserved. Not implemented in v1 because Communication is excluded. **Mandatory before Communication is admitted** (Section 8). | — | — | — |
 | R13 | Multiple-current ParticipationRestriction | More than one `is_current` `ParticipationRestriction` per subject/key. Required because Restriction is in v1 (Section 3.4) and gates `lineup.lock`: two disagreeing current restrictions make that gate nondeterministic, which is a fail-open risk, not a cosmetic one | **No** | **Always.** Choosing which restriction is current is a participation decision about a student, never a sweep's to make | Hourly |
+| R14 | Incomplete roster move | Source RosterAssignment recovery metadata says `roster.move` with request `R`, source is terminal `removed`, but no destination row with `creation_request_id=R` exists after settling window | **No** | **Always.** Destination intent is operator-reviewed; AuditLog is not required for detection. | Hourly |
+| R15 | Duplicate OrganizationGameOffering | More than one Offering for `(organization_id, game_id)` | **No** | **Always.** Dependent resolution fails closed while ambiguous. | Hourly |
+| R16 | Incomplete TeamSeason completion cascade | TeamSeason `completed` while one or more child RosterAssignments remain `active|reserve|inactive` after settling window | **Yes — complete leftover rosters and close affected captains.** | Review only if deterministic repair fails. | Every 5 minutes |
+| R17 | Incomplete captain replacement | Superseded old CaptainAssignment recovery metadata says replacement request `R`, but no replacement row with `creation_request_id=R` exists after settling window | **No** | **Always.** Replacement is a new grant whose prerequisites may have changed. Finding sensitivity is `RestrictedStudent`. | Hourly |
 
 Cadences above are the frozen *maximum* interval for each sweep's class. A shorter interval is an operational decision; a longer one is an architecture decision.
 
@@ -449,6 +476,7 @@ Every portable domain object carries:
 - an explicit **`created_by_user_id`** wherever provenance matters — never `created_by` email (Section 2.2);
 - **`organization_id`**;
 - **correlation / operation ids** linking every record written by one operation;
+- immutable **`creation_request_id`** on Amendment-003 Class-A created resources, carrying durable logical request identity separately from execution correlation;
 - **supersession ids** (`supersedes_*_id`) per the entity's Contract Section 2 mutability model;
 - **`is_current`** where the model is `AO+S`;
 - **source type / source reference fields** required by the canonical contract — `ParticipationRestriction.source_type` / `source_reference_id`, `EligibilityEvaluation` typed `source_reference` + `reason_code`, and every other provenance field Contract Section 2 names.
@@ -481,7 +509,19 @@ The mapping for the operations named at this gate:
 | `revokeRole` | `role.revoke` |
 | `assignCoachScope` | `scope.assign` |
 | `assignCaptain` | `captain.assign` |
+| `closeCaptain` | `captain.close` |
 | `deactivateMembership` | `membership.deactivate` |
+| `createTeam` | `team.create` |
+| `updateTeam` | `team.update` |
+| `archiveTeam` | `team.archive` |
+| `createTeamSeason` | `team_season.create` |
+| `transitionTeamSeason` | `team_season.transition` |
+| `createOffering` | `offering.create` |
+| `transitionOffering` | `offering.transition` |
+| `assignRoster` | `roster.assign` |
+| `transitionRoster` | `roster.transition` |
+| `completeRoster` | `roster.complete` |
+| `removeRoster` | `roster.remove` |
 | `moveRoster` | `roster.move` |
 | `lockLineup` | `lineup.lock` |
 | `unlockLineup` | `lineup.unlock` |
@@ -558,5 +598,6 @@ Both items this profile originally raised for decision have been ratified. **No 
 |---|---|---|---|
 | 1 | **Restriction domain** — `ParticipationRestriction` and `RestrictionReview` admitted as a derived consequence of `lineup.lock` being in scope | **Approved**, bounded to canonical lineup and participation gating. `lineup.lock` will not ship with the restriction-clear leg unevaluated. Conduct remains excluded and is not broadened by this. | Sections 3.1, 3.4 |
 | 2 | **`match_schedule.supersede` Outbox behaviour** — no `OutboxEvent` while Communication is excluded | **Approved** as a scoped profile deviation. Domain mutation and operational AuditLog remain required; no side effect exists because no consumer exists; admitting Communication reopens the requirement and needs the dedicated Communication gate. | Sections 5.1 (Invariant 14), 8.1 |
+| 3 | **Layer 1 Team/Roster Base44 recovery posture** — non-atomic move/replacement/cascade containment, I14–I17, R14–R17, and Game-scope deferral | **Approved** by Amendment 003. Canonical semantics remain in the contract; Base44-only recovery metadata and ordering live in this profile. | Sections 5.7, 7.2, 10.2 |
 
 A future item that requires a decision is added to this table by an architecture gate, not by an implementation agent. An implementation agent that believes it needs one stops and requests the gate (Section 0).
