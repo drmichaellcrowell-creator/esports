@@ -253,3 +253,111 @@ No runtime entity records were created, updated, or deleted by the verifier.
 `LAYER 1 SLICE 1C — PASSED`
 
 The foundation verification gate is closed. The project may proceed to the first controlled Layer 1 mutation slice. Mutation admission must remain incremental and must not activate unrelated Layer 1 operations.
+
+
+## First mutation slice — Team operations (pre-activation)
+
+Status: **staged; candidate policy not yet active.**
+
+**Pre-activation Base44 checkpoint:** `6ab3083b0ccd6cab9bca4f41` (`d783bb64afd7ed91fd52b6404b428e63fae3cd98`)
+
+### Operations staged
+
+Only these Layer 1 mutation operations are admitted to the dispatcher:
+
+- `team.create`
+- `team.update`
+- `team.archive`
+
+No TeamSeason, RosterAssignment, OrganizationGameOffering, or CaptainAssignment mutation key is admitted.
+
+### Team operation semantics
+
+`team.create`:
+- OrgAdmin only;
+- creates Team at `active`;
+- durable `creation_request_id`;
+- same request id + same material input returns prior Team;
+- same request id + different material input conflicts;
+- same-Organization serialization uses the existing Organization CAS guard;
+- post-create bounded stable-read confirmation;
+- Organization-scoped audit.
+
+`team.update`:
+- OrgAdmin only;
+- active Team only;
+- updates `team_display_name` in place;
+- same requested display name = target-state idempotent no-op;
+- version CAS + bounded stable-read confirmation;
+- Organization-scoped audit.
+
+`team.archive`:
+- OrgAdmin only;
+- terminal `active → archived`;
+- denies while any child TeamSeason is `planning` or `active`;
+- already archived = target-state idempotent no-op;
+- version CAS + bounded stable-read confirmation;
+- Organization-scoped audit.
+
+### Candidate production policy
+
+Staged candidate:
+
+- policy key: `esports_v1`
+- version label: `1a-team-ratified`
+- adds exactly three OrganizationAdministrator Team mutation grants:
+  - Team/create
+  - Team/update
+  - Team/archive
+- no CoachScope mutation grant;
+- no TeamSeason/Roster/Offering/Captain mutation grant.
+
+The historical `0b.3-ratified` rules remain frozen in the version registry.
+
+At this checkpoint the active persisted policy remains:
+
+- `0b.3-ratified`
+- hash `6fb07410c24825e2d092a5132ff3257216f4a9d82db87e7031cb765628177105`
+
+Therefore the new Team operations are currently dispatcher-reachable but authorization-fail-closed until the candidate policy is explicitly activated.
+
+### Verification functions staged
+
+`layer1_team_policy_preflight`
+- read-only;
+- computes candidate policy hash;
+- verifies registry/candidate rules match;
+- verifies exactly the three intended Team grants;
+- verifies no other Layer 1 mutation grant;
+- verifies active policy is still `0b.3-ratified`.
+
+`layer1_team_mutation_verification`
+- post-activation synthetic-only acceptance harness;
+- creates a synthetic Organization/Membership/OrgAdmin authority context;
+- invokes the real `execute_operation` path;
+- tests create, request replay, request-id conflict, authorization denial, update, target-state idempotency, archive, archive replay, archived-update denial, and audit presence;
+- no TeamSeason/Roster/Offering/Captain writes;
+- no policy mutation;
+- cleans its own synthetic fixtures.
+
+### Pre-activation boundary audit
+
+Verified:
+
+- dispatcher Layer 1 keys = exactly `team.create`, `team.update`, `team.archive`;
+- candidate production version = `1a-team-ratified`;
+- candidate Team mutation rule count = 3;
+- policy registry contains `1a-team-ratified`;
+- active persisted policy remains `0b.3-ratified`;
+- policy preflight contains no entity mutation calls;
+- mutation verifier does not modify AuthorizationPolicyVersion;
+- mutation verifier contains no TeamSeason/Roster/Offering/Captain writes.
+
+## Next gate
+
+1. Execute read-only `layer1_team_policy_preflight`.
+2. Require `allPassed: true`.
+3. Only then invoke existing `policy.activate` through the production `execute_operation` path to activate `1a-team-ratified`.
+4. Verify exactly one active policy and correct candidate hash/version.
+5. Run `layer1_team_mutation_verification`.
+6. Do not proceed to OrganizationGameOffering until the Team mutation slice passes.
