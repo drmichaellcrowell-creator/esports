@@ -361,3 +361,24 @@ Verified:
 4. Verify exactly one active policy and correct candidate hash/version.
 5. Run `layer1_team_mutation_verification`.
 6. Do not proceed to OrganizationGameOffering until the Team mutation slice passes.
+
+
+## Team policy preflight — PASSED
+
+**Base44 checkpoint:** `6ab30946ca33453a472fa677` (`24f8dfefc8038369f4a31f2cc110662f8d157a70`)
+
+Read-only `layer1_team_policy_preflight` result:
+
+- candidate version: `1a-team-ratified`
+- candidate hash: `d2daa3a72e60827627b70b9eaadfe8b0b2edcb639f97111da8a67622acba61bf`
+- active version before activation: `0b.3-ratified`
+- candidate hash matches registry: true
+- candidate rules match registry: true
+- exactly three Team mutation rules: true
+- Team actions exact: create/update/archive
+- Team rules OrgAdmin-only: true
+- no other Layer 1 mutation rules: true
+- allPassed: true
+- failures: []
+
+Policy activation is now authorized for the candidate `1a-team-ratified` through the existing production `policy.activate` path only.
