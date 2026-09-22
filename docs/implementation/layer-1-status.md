@@ -406,3 +406,52 @@ Verified directly after activation:
 - CaptainAssignment = 0 records.
 
 The Team mutation acceptance harness may now run. Do not admit any additional Layer 1 mutation family until it passes.
+
+
+## First mutation slice — Team operations — PASSED
+
+Status: **accepted — 12/12 synthetic-only assertions green.**
+
+**Post-pass Base44 checkpoint:** `6ab30aaf5500cdec7b35b963` (`24f8dfefc8038369f4a31f2cc110662f8d157a70`)
+
+Active policy:
+
+- `1a-team-ratified`
+- hash `d2daa3a72e60827627b70b9eaadfe8b0b2edcb639f97111da8a67622acba61bf`
+
+Acceptance verifier:
+
+- `layer1_team_mutation_verification`
+- `syntheticOnly = true`
+- `total = 12`
+- `passed = 12`
+- `failed = 0`
+- `allPassed = true`
+- `failures = []`
+
+Verified behavior:
+
+- `team.create` succeeds for authorized OrgAdmin;
+- same `creation_request_id` + same material input replays to the same Team;
+- same request id + different material input conflicts;
+- cross-Organization create is denied;
+- `team.update` succeeds only for active Team;
+- update target-state replay performs no additional domain version mutation;
+- `team.archive` succeeds with no open TeamSeason;
+- archive target-state replay performs no additional domain version mutation;
+- archived Team cannot be updated;
+- success audit events are present for create/update/archive.
+
+Post-verifier cleanup independently confirmed:
+
+- Team = 0
+- TeamSeason = 0
+- RosterAssignment = 0
+- OrganizationGameOffering = 0
+- CaptainAssignment = 0
+
+### Slice verdict
+
+`FIRST LAYER 1 MUTATION SLICE — TEAM — PASSED`
+
+The Team family is accepted. Proceed next to a separate OrganizationGameOffering mutation slice; do not combine it with TeamSeason/Roster/Captain cascades.
