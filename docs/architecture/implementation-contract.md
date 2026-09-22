@@ -4,7 +4,7 @@
 
 No contradictions were found between frozen sources during compilation that the Final Verification Gate had not already resolved. One implicit composition (Section 7, AuditLog+Outbox combined transaction) was made explicit per the Final Verification Gate's own closing invariant.
 
-**Incorporated amendments.** [Amendment 001 — Bootstrap Authority](amendments/001-bootstrap-authority.md) is incorporated into this document and is in force. It closes the Layer 0 genesis circularity (tenant genesis, policy genesis, and audit actor representation) and resolves the Section 2 / Section 5 `Membership` mutability contradiction in favour of the Section 5 model (`Membership` is `Temporal`). Amendment documents record rationale and the decision trail; **this contract remains the sole implementation source of truth**, and where an amendment document and this contract differ, this contract wins.
+**Incorporated amendments.** [Amendment 001 — Bootstrap Authority](amendments/001-bootstrap-authority.md), [Amendment 002 — Membership Lifecycle](amendments/002-membership-lifecycle.md), and [Amendment 003 — Layer 1 Team/Roster Architecture Closure](amendments/003-layer1-team-roster-closure.md) are incorporated into this document and are in force. Amendment 001 closes Layer 0 genesis and resolves Membership mutability; Amendment 002 ratifies the ordinary Membership lifecycle and its concurrency requirements; Amendment 003 closes Layer 1 Team/Roster field, lifecycle, operation, authorization, projection, idempotency, and recovery guarantees. Amendment documents record rationale and the decision trail; **this contract remains the sole implementation source of truth**, and where an amendment document and this contract differ, this contract wins.
 
 ---
 
@@ -44,21 +44,32 @@ Legend: **Mut.** = mutability model (`AO+S` = append-only + supersession `is_cur
 | Entity | Mut. | Sens. | Client R / Client W | Notes |
 |---|---|---|---|---|
 | Organization | Ctrl | SO | Player/Coach/OrgAdmin R / OrgAdmin W | `manage` action reserved to OrgAdmin. **Creation is exclusively via `organization.provision` (Platform authority, Section 4) and is never an OrgAdmin write** — OrgAdmin write authority begins at the moment provisioning commits |
-| Membership | **Temporal** | RS | self, OrgAdmin R / OrgAdmin W | `invited\|active\|inactive\|removed`; unique `(user_id, org_id)` regardless of status. **Exactly one Membership row may ever exist per `(user_id, organization_id)`** — status is the current standing of an enduring Organization relationship, transitioned in place by controlled operation; no supersession, no `is_current` chain, no duplicate rows. Created at `invited` by ordinary invitation, or directly at `active` by `organization.provision` for the designated first OrgAdmin |
+| Membership | **Temporal** | RS | self, OrgAdmin R / OrgAdmin W | `invited\|active\|inactive\|removed`; unique `(user_id, org_id)` regardless of status. **Exactly one Membership row may ever exist per `(user_id, organization_id)`** — status is the current standing of an enduring Organization relationship, transitioned in place by controlled operation; no supersession, no `is_current` chain, no duplicate rows. Created at `invited` by ordinary invitation, or directly at `active` by `organization.provision` for the designated first OrgAdmin. Optional bounded `display_name` is admitted by Amendment 003 for safe roster projection. |
 | RoleAssignment | AO+S | RS | self, OrgAdmin R / OrgAdmin W | unique active per `(membership_id, role_category)` |
 | CoachScopeAssignment | AO+S | RS | self, OrgAdmin R / OrgAdmin W | discriminated `(scope_type, scope_reference_id)`: `OrganizationWide\|Game\|Team\|TeamSeason` |
-| CaptainAssignment | AO+S | RS | self, OrgAdmin, coach_scope R / OrgAdmin, coach_scope W | effectiveness requires active Membership + active Player role + RosterAssignment `IN(active,reserve)` |
+| CaptainAssignment | AO+S | RS | self, OrgAdmin, coach_scope R / OrgAdmin, coach_scope W | effectiveness requires active Membership + active Player role + RosterAssignment `IN(active,reserve)`; at most one current row per `team_season_id`; immutable `creation_request_id` carries `captain.assign` logical-request identity |
 | AuthorizationPolicyVersion | Ctrl (pointer only) | — (metadata) | none | rule content in code; record holds `policy_key/version_label/policy_hash/status/effective_from` only; platform singleton active version. First version installed by `policy.bootstrap`, thereafter only by `policy.activate` (Section 4). `policy_hash` is **always server-computed** from the in-code artifact and never accepted as input; the resolver recomputes it and **denies every protected operation on mismatch** (Global Invariant 6) |
 
 ### Team / Roster
 
 | Entity | Mut. | Sens. | Client R / W | Notes |
 |---|---|---|---|---|
-| Team | Ctrl | SO | Player/Coach/OrgAdmin R / OrgAdmin W | persists across Seasons; `game_id` immutable; cannot go inactive/archived with open TeamSeason beneath it |
-| TeamSeason | Ctrl | SO | Player/Coach/OrgAdmin R / OrgAdmin, coach(scoped update) W | `planning\|active\|completed\|withdrawn` |
-| RosterAssignment | Temporal | SO | OrgAdmin, coach(scope) R / OrgAdmin, coach(scope) W | never repointed to a different TeamSeason; in-tenure status changes reuse row |
-| OrganizationGameOffering | Ctrl | SO | Player/Coach/OrgAdmin R / OrgAdmin W | unique `(org_id, game_id)` regardless of status |
-| RosterDisplayProjection | derived | SO | Player (own team-season), coach(scope), OrgAdmin R | see Section 8 |
+| Team | Ctrl | SO | Player/Coach/OrgAdmin R / OrgAdmin W | persists across Seasons; immutable `organization_id` + `game_id`; `active\|archived`; cannot archive with an open TeamSeason beneath it; immutable `creation_request_id` |
+| TeamSeason | Ctrl | SO | Player/Coach/OrgAdmin R / OrgAdmin, coach(scoped update) W | immutable `team_id`; `planning\|active\|completed\|withdrawn`; Organization resolves through Team; immutable `creation_request_id` |
+| RosterAssignment | Temporal | SO | OrgAdmin, coach(scope) R / OrgAdmin, coach(scope) W | immutable `membership_id` + `team_season_id`; `active\|reserve\|inactive\|completed\|removed`; optional `gamer_tag`; at most one non-terminal row per `(membership_id, team_season_id)`; immutable `creation_request_id` |
+| OrganizationGameOffering | Ctrl | SO | Player/Coach/OrgAdmin R / OrgAdmin W | immutable `organization_id` + opaque `game_id`; `active\|inactive`; unique `(organization_id, game_id)` regardless of status; immutable `creation_request_id` |
+| RosterDisplayProjection | derived | SO | Player (own team-season), coach(scope), OrgAdmin R | exact fields and audience constraints in Section 8 |
+
+#### Layer 1 field closure (Amendment 003)
+
+All persistent Layer 1 objects use application-generated UUIDs, application-owned timestamps and actor provenance, and execution `correlation_id`. Class-A creation operations additionally persist immutable `creation_request_id`, which is a durable logical-request identity distinct from execution correlation.
+
+- **Team** — `team_uuid`, `organization_id`, `game_id`, `team_display_name`, `status`, timestamps/provenance/correlation, `creation_request_id`. `organization_id` and `game_id` are immutable.
+- **TeamSeason** — `team_season_uuid`, immutable `team_id`, `team_season_display_name`, `status`, timestamps/provenance/correlation, `creation_request_id`. Organization resolves TeamSeason → Team → Organization.
+- **RosterAssignment** — `roster_assignment_uuid`, immutable `membership_id`, immutable `team_season_id`, `participation_status`, optional bounded `gamer_tag`, timestamps/provenance/correlation, `creation_request_id`. Organization resolves RosterAssignment → TeamSeason → Team → Organization; Membership must resolve to the same Organization. Roster participation is independent of Player RoleAssignment.
+- **OrganizationGameOffering** — `organization_game_offering_uuid`, immutable `organization_id`, immutable opaque `game_id`, `status`, timestamps/provenance/correlation, `creation_request_id`.
+
+Provider-specific concurrency/recovery fields are implementation-profile concerns and are not canonical domain fields.
 
 ### Events / Practice / Attendance
 
@@ -278,10 +289,21 @@ Format: `operation_key` — actors — preconditions — records touched — tra
 | `membership.deactivate` | OrgAdmin | active Membership; **target does not hold the last effective OrganizationAdministrator RoleAssignment in the Organization** | Membership status transitioned **in place** (no new row); cascades close all dependent Role/Scope/Captain | Required | — |
 | `role.assign` / `role.revoke` | OrgAdmin | `role.revoke`: **target is not the last effective OrganizationAdministrator RoleAssignment in the Organization** | RoleAssignment (new/superseded) | Required | — |
 | `scope.assign` / `scope.revoke` | OrgAdmin | Role is Coach | CoachScopeAssignment | Required | — |
-| `captain.assign` | OrgAdmin, coach(scope) | active Membership + active Player role + qualifying RosterAssignment | CaptainAssignment | Required | — |
-| `captain.close` | system (cascade), OrgAdmin | RosterAssignment leaves active/reserve, or Player role closes | CaptainAssignment superseded | Required | — |
+| `team.create` | OrgAdmin | valid same-Organization input | Team created `active` | Required | — |
+| `team.update` | OrgAdmin | Team exists and is active | Team display name updated in place | Required | — |
+| `team.archive` | OrgAdmin | Team active; no child TeamSeason in `planning|active` | Team `active → archived` | Required | — |
+| `team_season.create` | OrgAdmin | parent Team active | TeamSeason created `planning` | Required | — |
+| `team_season.transition` | OrgAdmin; coach(scope) for forward progressions only | legal transition; `withdrawn` is OrgAdmin-only | TeamSeason status transition; `active → completed` owns roster/captain completion cascade | Required | — |
+| `offering.create` | OrgAdmin | no existing Offering for `(organization_id, game_id)` | OrganizationGameOffering created `active` | Required | — |
+| `offering.transition` | OrgAdmin | legal transition | Offering `active ⇄ inactive` | Required | — |
+| `roster.assign` | coach(scope), OrgAdmin | active Membership; destination TeamSeason `planning|active`; no non-terminal duplicate for member+TeamSeason | RosterAssignment created `active` or `reserve` | Required | — |
+| `roster.transition` | coach(scope), OrgAdmin | non-terminal RosterAssignment; legal in-tenure transition | same RosterAssignment transitions among `active|reserve|inactive` | Required | — |
+| `roster.complete` | coach(scope), OrgAdmin, system | non-terminal RosterAssignment | RosterAssignment → `completed`; affected captain closes | Required | — |
+| `roster.remove` | coach(scope), OrgAdmin | non-terminal RosterAssignment | RosterAssignment → `removed`; affected captain closes | Required | — |
+| `captain.assign` | OrgAdmin, coach(scope) | active Membership + active Player role + qualifying RosterAssignment | CaptainAssignment create/replacement; at most one current per TeamSeason | Required | — |
+| `captain.close` | system (cascade), OrgAdmin | RosterAssignment becomes terminal, Player role closes, or OrgAdmin closes manually | current CaptainAssignment closed without replacement | Required | — |
 | `policy.activate` | Platform (operator entrypoint only) | new version passes validation; **exactly one** active AuthorizationPolicyVersion exists; `policy_hash` recomputed server-side from the in-code artifact | current active AuthorizationPolicyVersion superseded + new pointer created `active`, atomically | Required (Platform-scoped) | — |
-| `roster.move` | coach(scope), OrgAdmin | valid destination TeamSeason | old RosterAssignment closed + new created (+ CaptainAssignment cascade if applicable) | Required | — |
+| `roster.move` | coach(scope), OrgAdmin | non-terminal source; different destination TeamSeason in `planning|active`; no non-terminal destination duplicate | source RosterAssignment → `removed` + destination RosterAssignment created; source captain closes if applicable | Required | — |
 | `event.materialize_expectations` | system | Event `draft→scheduled` | EventParticipationExpectation set | — | if Notification required |
 | `team_season_competition_entry.transition` | OrgAdmin, coach(scope) | valid Offering/Entry | TeamSeasonCompetitionEntry status | Required | — |
 | `lineup.lock` | coach(scope, own org), OrgAdmin(own org) | roster validity + eligibility=eligible + restrictions clear + ruleset constraints, all atomically | MatchParticipantLineupLock | Required | — |
@@ -307,7 +329,13 @@ Format: `operation_key` — actors — preconditions — records touched — tra
 | `announcement.correct` | same as publish | prior Announcement exists | new Announcement inheriting original audience + OutboxEvent | Required | Required |
 | `outbox.replay` | OrgAdmin, own-org/own-participant-portion only | event is dead_letter | processing_state reset | Required | n/a (is the outbox op) |
 
-### 4.1 Bootstrap operations (Amendment 001)
+### 4.1 Layer 1 idempotency classes (Amendment 003)
+
+Class-A operations `team.create`, `team_season.create`, `offering.create`, `roster.assign`, `roster.move`, and `captain.assign` require durable logical request identity. The created row persists immutable `creation_request_id`; same request id + same material input returns/resumes the prior logical result, while same request id + different material input conflicts. `creation_request_id` is distinct from execution `correlation_id`.
+
+Class-B state-setting operations `team.update`, `team.archive`, `team_season.transition`, `offering.transition`, `roster.transition`, `roster.complete`, `roster.remove`, and `captain.close` use target-state idempotency: an already-achieved exact target is success/no mutation; an incompatible state is conflict/invalid. Concurrency control remains independent of idempotency.
+
+### 4.2 Bootstrap operations (Amendment 001)
 
 `policy.bootstrap` is the **only** operation in this contract that executes outside the authorization resolver, because no resolvable active policy version can exist before it runs. It is **self-extinguishing**: once any row with `status = active` exists, it is denied permanently. It is not a conditional branch inside the resolver; it is a separate operator entrypoint, unreachable over the network.
 
@@ -355,13 +383,28 @@ pending | ready → cancelled  (controlled match.cancel, authority: lifecycle_ca
 
 **Exactly one Membership row may ever exist for a given `(user_id, organization_id)`.** `UNIQUE (user_id, organization_id)` applies regardless of status. The row is an enduring Organization relationship whose status is transitioned in place, only through controlled operations; it is never superseded and never duplicated. Reactivation restores Membership standing only and never resurrects previously closed Role/Scope/Captain grants — a new authorization tenure requires fresh grants (Global Invariant 11). Historical authorization changes are preserved through AuditLog and through the immutable/superseding dependent grant records, **not** through duplicate Membership rows. Hard deletion of Membership remains prohibited through ordinary product workflows (Section 10, prohibition 11).
 
-Genesis: ordinary Membership is created at `invited`. The single exception is the designated first administrator created by `organization.provision`, which is created directly at `active` — the identity having been independently resolved and verified at provisioning time, and an Organization created with an `invited` administrator would hold zero *effective* administrators at commit, violating the zero-OrgAdmin invariant (Section 4.1).
+Genesis: ordinary Membership is created at `invited`. The single exception is the designated first administrator created by `organization.provision`, which is created directly at `active` — the identity having been independently resolved and verified at provisioning time, and an Organization created with an `invited` administrator would hold zero *effective* administrators at commit, violating the zero-OrgAdmin invariant (Section 4.2).
 
 ### AuthorizationPolicyVersion.status
 `active → superseded` (one-way; no other transition exists). **At most one row platform-wide may hold `status = active` at any time.** The first active pointer is created by `policy.bootstrap` and thereafter only by `policy.activate`, which supersedes the current active row and creates the new one in a single transaction. A missing, ambiguous, or hash-mismatched active version denies every protected operation (Global Invariant 6).
 
+### Team.status
+`active → archived` only. `archived` is terminal. `team.archive` denies while any child TeamSeason is `planning` or `active`.
+
+### TeamSeason.status
+```
+planning → active        (OrgAdmin or coach(scope))
+active   → completed     (OrgAdmin or coach(scope))
+planning → withdrawn     (OrgAdmin only)
+active   → withdrawn     (OrgAdmin only)
+```
+`completed` and `withdrawn` are terminal. `withdrawn` is the revocation/withdrawal transition excluded from Coach authority. When `active → completed` commits, all non-terminal child RosterAssignments must become `completed` and affected current CaptainAssignments must close.
+
+### OrganizationGameOffering.status
+`active ⇄ inactive`. No deletion/terminal status is introduced.
+
 ### RosterAssignment.participation_status
-`active ⇄ reserve ⇄ inactive` (same row, in-tenure) → `completed | removed` (terminal for that row; a new TeamSeason requires a new row).
+`active`, `reserve`, and `inactive` are mutually reversible in-tenure states on the same row. Any of those states may transition to terminal `completed` or `removed`; terminal states never reopen. A new TeamSeason requires a new row.
 
 ### CaptainAssignment effectiveness (live-computed, not a stored status alone)
 Requires simultaneously: active Membership + active Player RoleAssignment + RosterAssignment `∈ {active, reserve}` (NOT `inactive` — that makes it temporarily non-effective without closing it) + CaptainAssignment itself active/in-window. Only `completed`/`removed` RosterAssignment status triggers controlled closure of the CaptainAssignment.
@@ -455,7 +498,7 @@ Every row below is one atomic transaction — partial commit is never acceptable
 
 | Projection | Source of truth | Audience | Exposes | Withholds | Provenance? |
 |---|---|---|---|---|---|
-| RosterDisplayProjection | RosterAssignment, Team, Membership(allowlist), CaptainAssignment(live) | Player(own team-season), coach(scope), OrgAdmin | display_name, gamer_tag, team/game context, live captain_indicator, member_reference (not raw membership_id) | raw membership_id, all Membership fields beyond allowlist | **No** |
+| RosterDisplayProjection | RosterAssignment, Team, Membership(allowlist), CaptainAssignment(live) | Player(own team-season), coach(scope), OrgAdmin | `member_reference` (opaque, not raw Membership UUID), `display_name` (Membership), `gamer_tag` (RosterAssignment), `team_name`, `game_id`, `participation_status`, live `captain_indicator` | raw `membership_id`, all Membership fields beyond `display_name`, terminal roster history, audit/authority metadata | **No** |
 | TeamMatchSummaryProjection | Match, MatchParticipant, AcceptedResult | Player/coach/OrgAdmin per audience | identity, opponent, schedule, result summary | raw submission/audit detail | **No** |
 | PlayerMatchResultProjection | PlayerCompetitiveResult, MatchParticipation | self, coach(scope) | individual result, simply rendered | correction chain, raw audit | **No** |
 | SharedMatchStateProjection | Match, MatchParticipant, MatchSchedule, AcceptedResult, dispute/discrepancy state | both participant Orgs | the narrow SharedCompetition surface only | all OrganizationOwned content of either side | **No** |
@@ -551,7 +594,7 @@ Run at the end of every implementation phase before declaring it complete:
 | Contract section | Originating gate(s) |
 |---|---|
 | Identity/Access/Policy | Phases 1A, 1B, 1C, 1D |
-| Team/Roster | Phases 2A, 2B |
+| Team/Roster | Phases 2A, 2B + Amendment 003 (field/operation/lifecycle closure) |
 | Events/Practice/Attendance | Phase 2C (as corrected) |
 | Competition/Match/Scoring/Results | Phase 2D (original + two correction rounds: authorization/lifecycle completion, cancellation/lineup-lock finalization) |
 | Development/Goals/Skills | Phase 2E (as corrected) |
