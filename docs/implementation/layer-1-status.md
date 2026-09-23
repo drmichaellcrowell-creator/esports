@@ -849,3 +849,55 @@ Verified directly after activation:
 Historical duplicate superseded rows with the same version label do not create an authorization ambiguity because the production loader requires exactly one active policy and one active row is present.
 
 The TeamSeason acceptance harness may now run. Completion remains intentionally fail-closed pending the later Roster/Captain cascade slice.
+
+
+## TeamSeason standalone lifecycle slice — PASSED
+
+Status: **accepted — 14/14 synthetic-only assertions green.**
+
+**Post-pass Base44 checkpoint:** `6ab32577d41dc82f5d106786` (`157c0aed8d0e33cb2665af370d18d21aeaded162`)
+
+Active policy:
+
+- `1c-teamseason-ratified`
+- hash `f4feb56d0c838c12f60ccec6fe4f1698dcb531234c86cc800e64ea44cf4f1882`
+
+Acceptance verifier:
+
+- `layer1_teamseason_mutation_verification`
+- `syntheticOnly = true`
+- `total = 14`
+- `passed = 14`
+- `failed = 0`
+- `allPassed = true`
+- `failures = []`
+
+Verified behavior:
+
+- TeamSeason create at `planning`;
+- durable create replay;
+- conflicting request-id reuse denied as conflict;
+- create denied under archived Team;
+- OrgAdmin `planning → withdrawn`;
+- withdrawn target-state replay is idempotent with no second version mutation;
+- withdrawn is terminal;
+- Coach(scope) `planning → active`;
+- Coach wrong-scope denial;
+- Coach withdrawal denial;
+- `active → completed` explicitly fails closed while completion cascade is not admitted;
+- CoachScope authority identity is preserved in audit;
+- successful create and transition audits are present.
+
+Post-verifier cleanup independently confirmed:
+
+- Team = 0
+- TeamSeason = 0
+- RosterAssignment = 0
+- OrganizationGameOffering = 0
+- CaptainAssignment = 0
+
+### Slice verdict
+
+`TEAMSEASON STANDALONE LIFECYCLE SLICE — PASSED`
+
+The next work should be a separate completion-cascade slice that admits `active → completed` only together with RosterAssignment completion, CaptainAssignment closure, and R16 reconciliation.
