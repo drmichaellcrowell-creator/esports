@@ -1871,3 +1871,78 @@ The referenced RoleAssignment no longer existed, confirming the finding was orph
 `CAPTAINASSIGNMENT SLICE — PASSED`
 
 All Layer 1 mutation families are now implemented and individually accepted. The next step should be a Layer 1 closure/freeze audit across architecture parity, dispatcher/policy boundary, reconciliation coverage, entity/RLS state, synthetic-test cleanliness, and GitHub/Base44 state before declaring Layer 1 frozen.
+
+
+## Layer 1 Closure Remediation A — PASSED
+
+Scope: freeze blockers F1, F3, and F4 from the Layer 1 closure audit.
+
+**Post-remediation Base44 checkpoint:** `6ab42906d346ec4c28e72855`  
+**Base44 runtime commit:** `050654b9666889472c8ea9f3af523b765e99deef`
+
+### F1 — TeamSeason completion ordering — CLOSED
+
+The Base44 v1 profile is now aligned with the already-accepted runtime order:
+
+1. close affected current CaptainAssignments;
+2. complete nonterminal child RosterAssignments;
+3. bounded stable-read confirmation of zero current captains + zero nonterminal rosters;
+4. publish TeamSeason `completed` last.
+
+This order is now explicitly ratified by:
+
+- `docs/architecture/amendments/004-layer1-completion-ordering-ratification.md`
+- updated `docs/architecture/base44-implementation-profile-v1.md`
+
+Canonical TeamSeason lifecycle semantics are unchanged. The change is v1 substrate ordering only.
+
+### F3 — reconciliation schema/runtime parity — CLOSED
+
+Live Base44 schemas now enumerate all active Layer 1 sweep keys.
+
+`ReconciliationHeartbeat.sweep_key`:
+- R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R14, R15, R16, R17, all
+
+`ReconciliationFinding.sweep_key`:
+- R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R14, R15, R16, R17
+
+Direct CRUD RLS remains false for read/create/update/delete on both schemas.
+
+Source JSONC files were updated to match the live schemas.
+
+### F4 — R9 audit reconciliation — CLOSED
+
+R9 semantics were corrected:
+
+- domain record with missing matching audit remains actionable;
+- generic success audit with no newly-correlated domain row is no longer treated as proof of an orphan, because Class-A replay and Class-B target-state idempotency can legitimately produce success without a new domain mutation;
+- orphan detection now requires operation-specific proof rather than a generic correlation absence;
+- the two preserved pre-R9 `0b.3-ratified` rows with synthetic correlation `lb02-restore-active` are explicitly documented as legacy unaudited history and are no longer re-reported;
+- no retrospective audit was fabricated.
+
+Historical reconciliation cleanup:
+- 600 repeated open `lb02-restore-active` R9 findings resolved;
+- 5 historical `orphaned_audit` findings invalidated by the corrected semantics resolved;
+- 38 Layer 1 synthetic fixture `missing_audit` findings resolved after confirming all Layer 1 domain tables were empty.
+
+Scheduled verification after deployment:
+
+- latest R9 heartbeat: `clean`, findings=0
+- latest overall reconciliation heartbeat: `clean`, findings=0
+- open R9 findings: 0
+
+Correlation for the first clean scheduled run:
+`fb18b037-40ba-406b-a884-16dc68870fcf`
+
+Layer 1 domain counts remained zero and active policy remained:
+
+- `1f-captain-ratified`
+- `1038852cb36d906d88c88747d7a99b77899139d48f3c2e1523ac8ed2694c5f8f`
+
+### Remaining freeze blocker
+
+Only F2 remains:
+
+**Canonical Layer 1 read + RosterDisplayProjection boundary is not yet implemented.**
+
+The next closure remediation slice must implement and verify that read boundary before the final Layer 1 freeze gate.
