@@ -2138,3 +2138,44 @@ Read-only `layer1_read_policy_preflight` result:
 - failures: []
 
 Policy activation is now authorized for candidate `1g-layer1-read-ratified` through the existing production `policy.activate` path only.
+
+
+## Layer 1 read policy activation — PASSED
+
+**Current active policy UUID:** `e5d33548-4269-4ea3-823f-c43ac7657aa3`  
+**Current active version:** `1g-layer1-read-ratified`  
+**Current active hash:** `f4624985e292b9c0b53f3f4bea7d8ea92328de90cb3ec6b636098aea48bc3cf4`  
+**Current activation correlation:** `policy-activate-1g-1790198195898`
+
+**Post-activation Base44 checkpoint:** `6ab44220932ff7315de06814` (`52b2f65f8ca1a9af73c4161854db237f64fa93e3`)
+
+Verified directly after activation:
+
+- exactly one AuthorizationPolicyVersion is active;
+- active version = `1g-layer1-read-ratified`;
+- active hash matches the verified candidate hash;
+- Team = 0;
+- TeamSeason = 0;
+- RosterAssignment = 0;
+- OrganizationGameOffering = 0;
+- CaptainAssignment = 0.
+
+### Duplicate 1g activation history
+
+The policy history contains two consecutive production activations of the same exact `1g` version/hash:
+
+1. `1c3ae452-ac76-4240-bcfc-e71a3a784db2`
+   - correlation `policy-activate-1g-1790198190924`
+   - effective `2026-09-23T21:16:31.321Z`
+   - now `superseded`
+
+2. `e5d33548-4269-4ea3-823f-c43ac7657aa3`
+   - correlation `policy-activate-1g-1790198195898`
+   - effective `2026-09-23T21:16:36.240Z`
+   - currently `active`
+
+The second activation superseded the first after ~4.9 seconds. Both rows have the exact same verified policy hash and platform-operator provenance. The resulting state is unambiguous: exactly one active policy. No Layer 1 domain rows were created.
+
+This duplicate activation history is retained rather than deleted or rewritten.
+
+The `layer1_read_projection_verification` acceptance gate may now run.
