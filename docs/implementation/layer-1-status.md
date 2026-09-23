@@ -1946,3 +1946,168 @@ Only F2 remains:
 **Canonical Layer 1 read + RosterDisplayProjection boundary is not yet implemented.**
 
 The next closure remediation slice must implement and verify that read boundary before the final Layer 1 freeze gate.
+
+
+## Layer 1 Closure Remediation B — read + projection boundary staged
+
+Status: **staged; candidate policy not yet active.**
+
+**Pre-activation Base44 checkpoint:** `6ab43d7467219fe1bc43d220`  
+**Base44 runtime commit:** `52b2f65f8ca1a9af73c4161854db237f64fa93e3`
+
+### Dedicated read boundary
+
+New backend function:
+
+- `layer1_read`
+
+This is intentionally separate from `execute_operation`: reads are resolver-gated backend reads, while `execute_operation` remains the controlled mutation/administrative operation boundary.
+
+Supported resources:
+
+- Team
+- TeamSeason
+- OrganizationGameOffering
+- RosterAssignment
+- CaptainAssignment
+- RosterDisplayProjection
+
+### Resolver hardening
+
+The centralized resolver now explicitly consumes two server-derived special-scope proofs:
+
+- `selfMatch`
+- `viewerTeamSeasonMemberMatch`
+
+Both fail closed unless the backend supplies `true`.
+
+This makes Player CaptainAssignment self-read and Player roster-projection membership enforcement explicit in the pure resolver rather than relying on a handler comment/precondition.
+
+### Canonical read behavior staged
+
+OrgAdmin:
+- Team read — same Organization
+- TeamSeason read — same Organization
+- RosterAssignment read — same Organization
+- OrganizationGameOffering read — same Organization
+- CaptainAssignment read — existing same-Organization grant retained
+- RosterDisplayProjection read — same Organization
+
+Coach:
+- Team read — CoachScope containment
+- TeamSeason read — CoachScope containment
+- RosterAssignment read — CoachScope containment
+- OrganizationGameOffering read — OrganizationWide or Team/TeamSeason game match
+- CaptainAssignment read — CoachScope containment through TeamSeason
+- RosterDisplayProjection read — CoachScope containment through TeamSeason
+
+Player:
+- Team read — same Organization
+- TeamSeason read — same Organization
+- OrganizationGameOffering read — same Organization
+- CaptainAssignment read — self only
+- RosterDisplayProjection read — only when the Player's Membership has exactly one nonterminal roster tenure in the requested TeamSeason
+- no raw RosterAssignment read grant
+
+### RosterDisplayProjection
+
+Derived DTO fields are exactly:
+
+- `member_reference`
+- `display_name`
+- `gamer_tag`
+- `team_name`
+- `game_id`
+- `participation_status`
+- `captain_indicator`
+
+Projection rules:
+
+- only `active|reserve|inactive` roster rows appear;
+- `completed|removed` history is excluded;
+- raw Membership UUID is never returned;
+- `member_reference` is a deterministic opaque server-derived SHA-256 reference over TeamSeason + Membership identity with `member_` prefix;
+- `captain_indicator` is live-computed and is true only when:
+  - Membership is active;
+  - current Player RoleAssignment exists;
+  - roster status is active or reserve;
+  - exactly one current CaptainAssignment exists for that Membership + TeamSeason;
+- inactive roster may remain projected but never reports effective captaincy;
+- projection carries no authority/provenance semantics.
+
+### Policy candidate
+
+Staged candidate:
+
+- `1g-layer1-read-ratified`
+
+It inherits the accepted `1f-captain-ratified` mutation surface unchanged and adds exactly 16 read-only rules.
+
+The complete Layer 1 read matrix contains 17 rules because OrgAdmin CaptainAssignment read already existed in the inherited Layer 0 policy.
+
+No mutation grant is added or changed.
+
+Current persisted active policy remains:
+
+- `1f-captain-ratified`
+- `1038852cb36d906d88c88747d7a99b77899139d48f3c2e1523ac8ed2694c5f8f`
+
+### Verification staged
+
+`layer1_read_policy_preflight`:
+- read-only;
+- candidate/registry hash parity;
+- exact 17-rule Layer 1 read matrix;
+- exactly 16 candidate-only additions;
+- candidate-only rules are all `read`;
+- Player has no raw RosterAssignment read;
+- Player CaptainAssignment scope is exactly `self`;
+- Player RosterDisplayProjection scope is exactly `viewer_team_season_member`;
+- Coach CaptainAssignment read is exactly `coach_scope`;
+- pure resolver proves self scope deny/allow on false/true proof;
+- pure resolver proves viewer_team_season_member deny/allow on false/true proof;
+- active policy remains `1f-captain-ratified`.
+
+`layer1_read_projection_verification`:
+- synthetic-only;
+- OrgAdmin canonical raw reads + projection allow;
+- cross-Organization Team denial;
+- Coach scoped Team/TeamSeason/Offering/Roster/Captain/projection reads;
+- Coach wrong-Team, wrong-game Offering, and wrong-projection scope denial;
+- Player Team/TeamSeason/Offering same-org reads;
+- Player raw roster denial;
+- Player own CaptainAssignment allow;
+- Player teammate CaptainAssignment deny;
+- Player projection allow only on own TeamSeason;
+- Player nonmember TeamSeason projection denial;
+- projection exact-field allowlist;
+- projection contains no raw Membership UUID;
+- terminal roster history excluded;
+- active/reserve/inactive rows included;
+- live captain indicator semantics;
+- deterministic opaque member_reference stability;
+- synthetic fixture cleanup.
+
+### Pre-activation boundary audit
+
+Verified before activation:
+
+- active policy remains `1f-captain-ratified`;
+- candidate = `1g-layer1-read-ratified`;
+- candidate registry entry exists;
+- dedicated `layer1_read` backend surface exists;
+- RosterDisplayProjection is supported;
+- explicit `selfMatch` and `viewerTeamSeasonMemberMatch` are wired;
+- projection uses nonterminal roster set only;
+- captain indicator is live-computed;
+- preflight is read-only;
+- mutation verifier does not mutate policy;
+- Team/TeamSeason/RosterAssignment/OrganizationGameOffering/CaptainAssignment counts remain 0.
+
+The Base44 shell cannot see the same mounted app tree as `read_file`, and Deno is unavailable there; no shell typecheck claim is made. Runtime verification remains the authoritative gate.
+
+## Next gate
+
+Run read-only `layer1_read_policy_preflight`.
+
+Only if it passes may `1g-layer1-read-ratified` be activated and `layer1_read_projection_verification` run.
