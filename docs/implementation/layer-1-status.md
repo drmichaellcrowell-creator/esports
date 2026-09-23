@@ -605,3 +605,27 @@ Read-only `layer1_offering_policy_preflight` result:
 - failures: []
 
 Policy activation is now authorized for candidate `1b-offering-ratified` through the existing production `policy.activate` path only.
+
+
+## Offering mutation policy activation — PASSED
+
+**Activation correlation:** `policy-activate-1b-offering-ratified-2026-09-23T1915CST`  
+**Activated version:** `1b-offering-ratified`  
+**Activated hash:** `78626cd58f032ca9a25b0437e87bf9165ca69bef9ce6230f47e77c12c6f33b9f`  
+**New policy UUID:** `7ef16e2b-9805-433a-b0d4-f155b13e09ac`  
+**Superseded policy UUID:** `4e48c67c-d014-406c-860a-487b803e33d0`
+
+**Post-activation Base44 checkpoint:** `6ab31c327fc6c86c8d5e899a` (`dde2b26649572b9affa04d987052331678292b83`)
+
+Verified directly after activation:
+
+- exactly one active AuthorizationPolicyVersion;
+- active version = `1b-offering-ratified`;
+- active hash = `78626cd58f032ca9a25b0437e87bf9165ca69bef9ce6230f47e77c12c6f33b9f`;
+- Team = 0 records;
+- TeamSeason = 0 records;
+- RosterAssignment = 0 records;
+- OrganizationGameOffering = 0 records;
+- CaptainAssignment = 0 records.
+
+The Offering mutation acceptance harness may now run. Do not admit TeamSeason/Roster/Captain mutation families until it passes.
