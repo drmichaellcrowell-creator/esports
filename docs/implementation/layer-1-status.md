@@ -1285,3 +1285,62 @@ Verified directly after activation:
 - no `roster.move`, `captain.assign`, or `captain.close` operation was run.
 
 The RosterAssignment lifecycle acceptance harness may now run.
+
+
+## RosterAssignment lifecycle slice — PASSED
+
+Status: **accepted — 22/22 synthetic-only assertions green.**
+
+**Post-pass Base44 checkpoint:** `6ab3f2879316b59d6b64c695` (`5b8b16c02e036ed28d7d6544c7759d8d4576c0b9`)
+
+Active policy:
+
+- `1d-roster-ratified`
+- hash `fc9748423f821489e7e4246ea15e8d4d985778e57dac87dc9c9a8e07db42b2ce`
+
+Acceptance verifier:
+
+- `layer1_roster_mutation_verification`
+- `syntheticOnly = true`
+- `total = 22`
+- `passed = 22`
+- `failed = 0`
+- `allPassed = true`
+- `failures = []`
+
+Verified behavior:
+
+- roster.assign succeeds for valid active Membership + planning/active TeamSeason;
+- Class-A assignment replay returns the same RosterAssignment;
+- same request id + different material input conflicts;
+- second nonterminal assignment for the same Membership + TeamSeason conflicts;
+- initial `inactive` status is invalid;
+- inactive Membership assignment is denied;
+- completed TeamSeason assignment is denied;
+- in-tenure active→reserve transition succeeds;
+- exact target-state transition replay is idempotent with no second version mutation;
+- transition to `inactive` leaves current CaptainAssignment open;
+- roster.complete succeeds and closes affected captain;
+- roster.complete replay is idempotent;
+- roster.remove after completed conflicts as a different terminal target;
+- separate roster.remove succeeds and closes affected captain;
+- Coach(scope) roster.assign succeeds;
+- Coach wrong-scope assign is denied;
+- Coach(scope) transition succeeds;
+- Coach(scope) complete succeeds;
+- CoachScope authority identity is preserved in audit;
+- roster.assign success audit is present.
+
+Post-verifier cleanup independently confirmed:
+
+- Team = 0
+- TeamSeason = 0
+- RosterAssignment = 0
+- OrganizationGameOffering = 0
+- CaptainAssignment = 0
+
+### Slice verdict
+
+`ROSTERASSIGNMENT LIFECYCLE SLICE — PASSED`
+
+The next clean mutation family is `roster.move`, which should be admitted separately with its Class-A move request semantics, source-first safety ordering, destination-create continuation, source-captain closure, and R14 incomplete-move detection.
