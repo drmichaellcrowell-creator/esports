@@ -1022,3 +1022,67 @@ Read-only `layer1_teamseason_completion_preflight` result:
 - failures: []
 
 No new policy activation is required. The synthetic completion-cascade verifier may now run directly.
+
+
+## TeamSeason completion cascade slice — PASSED
+
+Status: **accepted — 15/15 synthetic-only assertions green.**
+
+**Post-pass Base44 checkpoint:** `6ab3e2a8b5c3b02cac86eec5` (`90dcf0babe58102e211469e92f0663870e8d15fa`)
+
+Active policy remains unchanged:
+
+- `1c-teamseason-ratified`
+- hash `f4feb56d0c838c12f60ccec6fe4f1698dcb531234c86cc800e64ea44cf4f1882`
+
+Acceptance verifier:
+
+- `layer1_teamseason_completion_verification`
+- `syntheticOnly = true`
+- `total = 15`
+- `passed = 15`
+- `failed = 0`
+- `allPassed = true`
+- `failures = []`
+
+Verified behavior:
+
+- OrgAdmin `active → completed` succeeds;
+- TeamSeason persists at `completed`;
+- child RosterAssignments in `active|reserve|inactive` transition to `completed`;
+- already-`completed` RosterAssignment remains unchanged;
+- `removed` RosterAssignment remains unchanged;
+- current CaptainAssignment closes;
+- completion target-state replay is idempotent and does not produce second domain version mutations;
+- completion success audit is present;
+- Coach(scope) `active → completed` succeeds;
+- CoachScope authority identity is preserved in the completion audit;
+- R16 detects a stale completed TeamSeason with nonterminal roster/current captain;
+- R16 deterministically completes the leftover roster;
+- R16 deterministically closes the leftover captain;
+- R16 writes its finding;
+- R16 repair audit remains Organization-scoped.
+
+Accepted completion ordering:
+
+1. close current CaptainAssignments;
+2. complete nonterminal RosterAssignments;
+3. require stable zero-current-captain / zero-nonterminal-roster confirmation;
+4. only then persist TeamSeason `completed`.
+
+This ordering fails toward less authority/visibility and allows resumable repair after partial execution.
+
+Post-verifier cleanup independently confirmed:
+
+- Team = 0
+- TeamSeason = 0
+- RosterAssignment = 0
+- OrganizationGameOffering = 0
+- CaptainAssignment = 0
+- open R16 findings = 0
+
+### Slice verdict
+
+`TEAMSEASON COMPLETION CASCADE SLICE — PASSED`
+
+The TeamSeason lifecycle is now complete through terminal completion, including deterministic child repair posture. The next clean Layer 1 mutation family is RosterAssignment lifecycle (`roster.assign`, `roster.transition`, `roster.complete`, `roster.remove`) before `roster.move` and CaptainAssignment replacement are admitted.
