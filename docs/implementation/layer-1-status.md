@@ -629,3 +629,56 @@ Verified directly after activation:
 - CaptainAssignment = 0 records.
 
 The Offering mutation acceptance harness may now run. Do not admit TeamSeason/Roster/Captain mutation families until it passes.
+
+
+## OrganizationGameOffering mutation slice — PASSED
+
+Status: **accepted — 14/14 synthetic-only assertions green.**
+
+**Post-pass Base44 checkpoint:** `6ab320b00bc75bff4a586947` (`dde2b26649572b9affa04d987052331678292b83`)
+
+Active policy:
+
+- `1b-offering-ratified`
+- hash `78626cd58f032ca9a25b0437e87bf9165ca69bef9ce6230f47e77c12c6f33b9f`
+
+Acceptance verifier:
+
+- `layer1_offering_mutation_verification`
+- `syntheticOnly = true`
+- `total = 14`
+- `passed = 14`
+- `failed = 0`
+- `allPassed = true`
+- `failures = []`
+
+Verified behavior includes:
+
+- `offering.create` succeeds for authorized OrgAdmin;
+- same `creation_request_id` + same material input replays prior Offering;
+- same request id + different material input conflicts;
+- second Offering for the same `(organization_id, game_id)` conflicts regardless of status;
+- cross-Organization create is denied;
+- `offering.transition` supports `active ⇄ inactive`;
+- exact target-state replay is idempotent with no second domain version mutation;
+- success audit events are present;
+- duplicate-key dependent lookup fails closed;
+- R15 detects synthetic duplicate Offering state;
+- R15 writes an open operator-review finding and performs no automatic repair.
+
+Post-verifier cleanup independently confirmed:
+
+- Team = 0
+- TeamSeason = 0
+- RosterAssignment = 0
+- OrganizationGameOffering = 0
+- CaptainAssignment = 0
+- open R15 findings = 0
+
+R15 heartbeat history remains present because the normal scheduled reconciliation sweep is now running; these are expected operational records, not leaked test fixtures.
+
+### Slice verdict
+
+`ORGANIZATION GAME OFFERING MUTATION SLICE — PASSED`
+
+The Offering family and R15 posture are accepted. The next mutation work should move to TeamSeason as its own slice before Roster/Captain cascades are admitted.
