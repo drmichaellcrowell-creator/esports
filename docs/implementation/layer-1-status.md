@@ -682,3 +682,122 @@ R15 heartbeat history remains present because the normal scheduled reconciliatio
 `ORGANIZATION GAME OFFERING MUTATION SLICE — PASSED`
 
 The Offering family and R15 posture are accepted. The next mutation work should move to TeamSeason as its own slice before Roster/Captain cascades are admitted.
+
+
+## TeamSeason mutation slice — pre-activation staged
+
+Status: **staged; candidate policy not yet active.**
+
+**Pre-activation Base44 checkpoint:** `6ab3226aff3e9bb3bf73769f` (`157c0aed8d0e33cb2665af370d18d21aeaded162`)
+
+### Operations staged
+
+New dispatcher keys:
+
+- `team_season.create`
+- `team_season.transition`
+
+Existing accepted Team + Offering keys remain.
+
+No RosterAssignment or CaptainAssignment mutation key is admitted.
+
+### TeamSeason lifecycle admitted in this slice
+
+`team_season.create`:
+- OrgAdmin only;
+- parent Team must be active;
+- creates TeamSeason at `planning`;
+- durable `creation_request_id`;
+- same request id + same material input replays prior logical result;
+- same request id + different material input conflicts;
+- Organization-scoped audit required.
+
+`team_season.transition`:
+- `planning → active`: OrgAdmin or Coach(scope);
+- `planning → withdrawn`: OrgAdmin only;
+- `active → withdrawn`: OrgAdmin only;
+- `withdrawn` and `completed` are terminal;
+- exact target-state replay is idempotent;
+- version CAS + stable-read confirmation;
+- Coach authority path preserves matching `coach_scope_assignment_uuid`;
+- Organization-scoped audit required.
+
+### Completion boundary
+
+Canonical `active → completed` is **not admitted in this slice**.
+
+The handler fails closed for target `completed` because canonical completion owns the RosterAssignment completion + CaptainAssignment closure cascade. Those mutation paths are not yet admitted, so allowing TeamSeason status to become `completed` would violate Amendment 003.
+
+R16 is therefore intentionally **not active yet**. It becomes mandatory when TeamSeason completion itself is admitted.
+
+### Policy candidate
+
+Staged candidate:
+
+- key: `esports_v1`
+- version: `1c-teamseason-ratified`
+- retains accepted Team + Offering grants;
+- adds exactly:
+  - OrgAdmin TeamSeason/create — same organization
+  - OrgAdmin TeamSeason/transition — same organization
+  - Coach TeamSeason/transition — `coach_scope`
+- no Roster/Captain mutation grants.
+
+Historical `1b-offering-ratified` remains frozen in the registry.
+
+Current persisted active policy remains `1b-offering-ratified`.
+
+### Reconciliation
+
+R9 domain collection now includes TeamSeason in addition to Team and OrganizationGameOffering.
+
+R16 remains deferred until completion/cascade admission.
+
+### Verification staged
+
+`layer1_teamseason_policy_preflight`
+- read-only;
+- canonical candidate/registry hash + rule equality;
+- exactly three TeamSeason rules;
+- exact OrgAdmin create/transition and Coach scoped transition rules;
+- no Roster/Captain mutation grants;
+- confirms active policy still `1b-offering-ratified`.
+
+`layer1_teamseason_mutation_verification`
+- synthetic-only;
+- tests OrgAdmin creation, durable replay, request-id conflict;
+- denies creation under archived Team;
+- tests OrgAdmin planning→withdrawn;
+- tests target-state idempotency and terminal behavior;
+- uses a separate Coach-only Organization to prove Team-scoped planning→active;
+- proves wrong Team scope denies;
+- proves Coach withdrawal denies;
+- proves completion fails closed pending cascade;
+- verifies CoachScope audit provenance and create/transition audit events;
+- contains no Roster/Captain writes;
+- cleans its own fixtures.
+
+### Pre-activation boundary audit
+
+Verified:
+
+- current active policy = `1b-offering-ratified`;
+- dispatcher Layer 1 keys = accepted Team + Offering + TeamSeason only;
+- candidate = `1c-teamseason-ratified`;
+- TeamSeason candidate rule count = 3;
+- policy registry contains `1c-teamseason-ratified`;
+- read-only preflight contains no entity mutations;
+- acceptance verifier contains no Roster/Captain writes;
+- acceptance verifier does not mutate AuthorizationPolicyVersion;
+- R9 includes TeamSeason;
+- R16 is not active;
+- Team/TeamSeason/Roster/Offering/Captain counts remain 0.
+
+## Next gate
+
+1. Run read-only `layer1_teamseason_policy_preflight`.
+2. Require `allPassed: true`.
+3. Only then activate `1c-teamseason-ratified` through production `policy.activate`.
+4. Verify exactly one active policy and expected hash/version.
+5. Run `layer1_teamseason_mutation_verification`.
+6. Do not admit TeamSeason completion, Roster, Captain, or R16 until a later cascade slice.
