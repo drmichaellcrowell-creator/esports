@@ -2228,3 +2228,56 @@ Pre-retry state independently verified:
 - latest overall reconciliation heartbeat = clean / 0 findings
 
 The full read/projection acceptance verifier should now be rerun once.
+
+
+## Layer 1 read/projection acceptance — split gate remediation
+
+The monolithic `layer1_read_projection_verification` repeatedly hit a Base44 request-rate ceiling despite all emitted assertions passing and cleanup succeeding.
+
+To avoid treating a platform throttle as a product failure, the same 30-case acceptance contract is now split into two deterministic synthetic-only gates:
+
+### Gate A — `layer1_read_access_verification`
+
+Expected total: **23**
+
+Covers:
+- OrgAdmin Team/TeamSeason/Offering/Roster/Captain/projection reads;
+- cross-Organization Team denial;
+- Coach scoped Team/TeamSeason/Offering/Roster/Captain/projection reads;
+- Coach wrong-Team, wrong-game Offering, and wrong-projection denial;
+- Player same-Organization Team/TeamSeason/Offering reads;
+- Player teammate raw RosterAssignment denial;
+- Player own raw RosterAssignment denial;
+- Player own CaptainAssignment read;
+- Player teammate CaptainAssignment denial.
+
+### Gate B — `layer1_roster_projection_verification`
+
+Expected total: **7**
+
+Covers:
+- Player own-TeamSeason projection allow;
+- exact seven-field safe DTO;
+- no raw Membership UUID leakage;
+- only active/reserve/inactive rows;
+- live captain_indicator semantics;
+- deterministic stable opaque member_reference;
+- nonmember TeamSeason projection denial.
+
+Both gates:
+- require active `1g-layer1-read-ratified`;
+- pace read calls;
+- use bounded rate-limit retry during cleanup;
+- report `expectedTotal` and `caseCountMatches`;
+- require cleanup success for `allPassed:true`;
+- do not mutate policy.
+
+**Pre-run Base44 checkpoint:** `6ab46695d4a05be21f34923e`  
+**Runtime commit:** `107c1ee5fad1b1977615551e9f478d71b76c21f8`
+
+Pre-run state:
+- active policy remains `1g-layer1-read-ratified`;
+- Layer 1 domain counts = 0;
+- open R9 findings = 0.
+
+Acceptance requires Gate A = 23/23 and Gate B = 7/7, both with cleanup passed.
