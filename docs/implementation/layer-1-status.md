@@ -801,3 +801,25 @@ Verified:
 4. Verify exactly one active policy and expected hash/version.
 5. Run `layer1_teamseason_mutation_verification`.
 6. Do not admit TeamSeason completion, Roster, Captain, or R16 until a later cascade slice.
+
+
+## TeamSeason policy preflight — PASSED
+
+**Base44 checkpoint:** `6ab3241600dbebbd1304f6de` (`157c0aed8d0e33cb2665af370d18d21aeaded162`)
+
+Read-only `layer1_teamseason_policy_preflight` result:
+
+- candidate version: `1c-teamseason-ratified`
+- candidate hash: `f4feb56d0c838c12f60ccec6fe4f1698dcb531234c86cc800e64ea44cf4f1882`
+- active version before activation: `1b-offering-ratified`
+- candidate hash matches registry: true
+- candidate rules match registry: true
+- exactly three TeamSeason rules: true
+- OrgAdmin create exact: true
+- OrgAdmin transition exact: true
+- Coach transition is `coach_scope` exact: true
+- no Roster/Captain mutation rules: true
+- allPassed: true
+- failures: []
+
+Policy activation is now authorized for candidate `1c-teamseason-ratified` through the existing production `policy.activate` path only.
