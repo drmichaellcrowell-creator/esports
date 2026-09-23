@@ -901,3 +901,107 @@ Post-verifier cleanup independently confirmed:
 `TEAMSEASON STANDALONE LIFECYCLE SLICE — PASSED`
 
 The next work should be a separate completion-cascade slice that admits `active → completed` only together with RosterAssignment completion, CaptainAssignment closure, and R16 reconciliation.
+
+
+## TeamSeason completion cascade slice — staged preflight
+
+Status: **staged; no new policy activation required.**
+
+**Base44 checkpoint:** `6ab32867829777c26beaa07e` (`842fd46ad34556d2cf87386fac29d193ab81749c`)
+
+### Completion workflow
+
+`team_season.transition` now admits canonical `active → completed` using one owned workflow:
+
+1. close current CaptainAssignments for the TeamSeason;
+2. complete every child RosterAssignment still `active|reserve|inactive`;
+3. require stable confirmation that no current captain and no nonterminal roster remains;
+4. only then CAS TeamSeason to `completed`.
+
+Ordering is deliberately toward less authority/visibility. Partial failure cannot make a TeamSeason completed before its children are closed/completed.
+
+Exact replay against an already-completed TeamSeason re-runs only the invariant confirmation/repair seam and performs no second mutation when the invariant is already satisfied.
+
+### Shared cascade helper
+
+Created:
+
+- `base44/shared/teamseason-completion.ts`
+
+The helper is idempotent/resumable and shared by the live operation and R16.
+
+Cascade mutations update Base44 recovery metadata on affected RosterAssignment/CaptainAssignment rows using the owning operation/correlation.
+
+### R16
+
+Created:
+
+- `base44/shared/reconciliation/sweeps-layer1.ts`
+
+R16:
+
+- scans TeamSeason rows with `status=completed`;
+- uses a 60-second operational settling window measured from `TeamSeason.updated_at`;
+- detects leftover `active|reserve|inactive` child rosters;
+- deterministically invokes the same shared completion helper;
+- writes Organization-scoped service audit for repair;
+- writes finding/heartbeat;
+- returns operator review only if deterministic repair fails.
+
+R16 is wired into the normal reconciliation run and R10 monitors its heartbeat.
+
+R9 domain collection now also includes RosterAssignment and CaptainAssignment.
+
+### Policy boundary
+
+No new policy version is needed.
+
+The active policy remains:
+
+- `1c-teamseason-ratified`
+- hash `f4feb56d0c838c12f60ccec6fe4f1698dcb531234c86cc800e64ea44cf4f1882`
+
+The already-ratified TeamSeason transition rules authorize OrgAdmin and Coach(scope) forward completion. No new operation key or authority category is introduced.
+
+### Verification staged
+
+`layer1_teamseason_completion_preflight`
+- read-only;
+- confirms active policy is still `1c-teamseason-ratified`;
+- confirms OrgAdmin TeamSeason transition authority;
+- confirms Coach scoped TeamSeason transition authority.
+
+`layer1_teamseason_completion_verification`
+- synthetic-only;
+- tests OrgAdmin `active → completed`;
+- verifies active/reserve/inactive child rosters become completed;
+- verifies pre-existing completed and removed rosters remain unchanged;
+- verifies current captain closes;
+- verifies completion replay is target-state idempotent with no second domain version mutation;
+- verifies completion audit;
+- verifies Coach(scope) completion + scope audit provenance;
+- injects stale completed TeamSeason with nonterminal roster/current captain;
+- runs R16 and verifies deterministic repair, finding, and Organization-scoped repair audit;
+- cleans its own synthetic fixtures.
+
+### Staged boundary audit
+
+Verified:
+
+- active policy remains `1c-teamseason-ratified`;
+- completion helper is attached to `team_season.transition`;
+- captain close occurs before roster completion;
+- stable confirmation requires zero current captains + zero nonterminal rosters;
+- R16 is wired;
+- R16 settling window is measured from `TeamSeason.updated_at`;
+- R16 uses the shared completion helper;
+- R16 audit resolves the Organization chain;
+- R10 monitors R16;
+- R9 includes RosterAssignment + CaptainAssignment;
+- preflight is read-only;
+- verifier does not mutate policy;
+- Team/TeamSeason/Roster/Offering/Captain counts remain 0.
+
+## Next gate
+
+Run read-only `layer1_teamseason_completion_preflight`. No policy activation follows this gate. If it passes, run `layer1_teamseason_completion_verification`.
