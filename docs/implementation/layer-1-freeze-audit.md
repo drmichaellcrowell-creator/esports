@@ -241,3 +241,25 @@ Layer 1 may be declared frozen only after all of the following are true:
 **Layer 1 mutation implementation is accepted, but Layer 1 is not yet frozen.**
 
 The next work should be a dedicated **Layer 1 Closure Remediation** slice addressing F1–F4, followed by one final read-only freeze gate.
+
+
+---
+
+# Remediation status — Closure Remediation A
+
+**Completed:** 2026-09-23  
+**Base44 checkpoint:** `6ab42906d346ec4c28e72855`  
+**Runtime commit:** `050654b9666889472c8ea9f3af523b765e99deef`
+
+Freeze blocker disposition:
+
+- **F1 — CLOSED.** Amendment 004 and the Base44 profile now ratify the accepted fail-toward-less-authority TeamSeason completion ordering.
+- **F3 — CLOSED.** ReconciliationHeartbeat/Finding schema enums now include R4/R14/R15/R16/R17 with deny-all RLS preserved.
+- **F4 — CLOSED.** R9 semantics were corrected; legacy `lb02-restore-active` history is explicitly exempted without fabricated audit; stale synthetic findings were resolved; the scheduled R9 and overall reconciliation run are now clean with zero findings.
+- **F2 — OPEN.** Canonical Layer 1 read adapters/policy and RosterDisplayProjection remain unimplemented.
+
+## Updated freeze verdict
+
+**NOT READY TO FREEZE — one blocker remains (F2).**
+
+The next dedicated closure remediation slice is the Layer 1 read/projection boundary.
