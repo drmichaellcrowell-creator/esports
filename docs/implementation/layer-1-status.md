@@ -1086,3 +1086,154 @@ Post-verifier cleanup independently confirmed:
 `TEAMSEASON COMPLETION CASCADE SLICE — PASSED`
 
 The TeamSeason lifecycle is now complete through terminal completion, including deterministic child repair posture. The next clean Layer 1 mutation family is RosterAssignment lifecycle (`roster.assign`, `roster.transition`, `roster.complete`, `roster.remove`) before `roster.move` and CaptainAssignment replacement are admitted.
+
+
+## RosterAssignment lifecycle slice — pre-activation staged
+
+Status: **staged; candidate policy not yet active.**
+
+**Pre-activation Base44 checkpoint:** `6ab3e4ec60134aa009873ab8` (`5b8b16c02e036ed28d7d6544c7759d8d4576c0b9`)
+
+### Operations staged
+
+New dispatcher keys:
+
+- `roster.assign`
+- `roster.transition`
+- `roster.complete`
+- `roster.remove`
+
+Deferred and still absent:
+
+- `roster.move`
+- `captain.assign`
+- `captain.close`
+
+### RosterAssignment semantics staged
+
+`roster.assign`:
+- OrgAdmin or Coach(scope);
+- active Membership required;
+- destination TeamSeason must be `planning|active`;
+- Membership and TeamSeason must resolve to the same Organization;
+- Player RoleAssignment is not required;
+- initial status defaults to `active`, may be `reserve`, and may not be `inactive`;
+- at most one nonterminal assignment per `(membership_id, team_season_id)`;
+- durable Class-A `creation_request_id`;
+- same request + same material input replays the prior row;
+- same request + different material input conflicts;
+- recovery metadata is populated;
+- Organization-scoped audit required.
+
+`roster.transition`:
+- OrgAdmin or Coach(scope);
+- same record transitions among `active|reserve|inactive`;
+- exact target-state replay succeeds without a second version mutation;
+- terminal rows cannot re-enter tenure;
+- `inactive` does not close CaptainAssignment;
+- Class-B recovery metadata updated.
+
+`roster.complete` / `roster.remove`:
+- OrgAdmin or Coach(scope);
+- valid from any nonterminal roster state;
+- exact same terminal target replays idempotently;
+- incompatible terminal target conflicts;
+- affected current CaptainAssignment is closed before the roster becomes terminal;
+- terminal change uses version guard + stable confirmation;
+- Class-B recovery metadata updated;
+- Organization-scoped audit required.
+
+Shared terminal helper:
+
+- `base44/shared/roster-terminal.ts`
+- closes matching current captain(s) for Membership + TeamSeason;
+- bounded stable read requires zero matching current captain rows before terminal roster mutation proceeds;
+- ordering fails toward less authority.
+
+### Policy candidate
+
+Staged candidate:
+
+- key: `esports_v1`
+- version: `1d-roster-ratified`
+
+It retains the accepted Team, Offering, and TeamSeason grants and adds exactly eight RosterAssignment lifecycle rules:
+
+- OrgAdmin: assign / transition / complete / remove — same Organization
+- Coach: assign / transition / complete / remove — `coach_scope`
+
+No `roster.move` rule and no CaptainAssignment mutation rule is added.
+
+Historical `1c-teamseason-ratified` remains frozen in the registry.
+
+Current persisted active policy remains `1c-teamseason-ratified`.
+
+### Reconciliation posture
+
+No new sweep is added in this slice.
+
+- R9 already includes RosterAssignment and CaptainAssignment domain rows.
+- R14 remains deferred because `roster.move` is not admitted.
+- Captain replacement reconciliation remains deferred with CaptainAssignment mutation admission.
+
+### Verification staged
+
+`layer1_roster_policy_preflight`
+- read-only;
+- validates candidate hash/rules against registry;
+- requires exactly eight RosterAssignment lifecycle rules;
+- requires exact actions assign/transition/complete/remove;
+- requires four OrgAdmin same-org rules;
+- requires four Coach `coach_scope` rules;
+- requires no `roster.move` grant;
+- requires no CaptainAssignment mutation grant;
+- confirms active policy still `1c-teamseason-ratified`.
+
+`layer1_roster_mutation_verification`
+- synthetic-only;
+- tests Class-A assign + replay + request-reuse conflict;
+- tests nonterminal duplicate conflict;
+- tests invalid initial inactive;
+- tests inactive Membership denial;
+- tests completed TeamSeason denial;
+- tests active→reserve and target-state replay;
+- verifies inactive roster leaves captain current;
+- verifies complete closes captain;
+- verifies complete replay is idempotent;
+- verifies incompatible terminal target conflicts;
+- verifies remove closes captain;
+- uses a separate Coach-only Organization to prove scoped assign/transition/complete;
+- proves wrong Coach scope denial;
+- verifies CoachScope audit provenance;
+- verifies assign success audit;
+- cleans its own fixtures.
+
+### Pre-activation boundary audit
+
+Verified:
+
+- current active policy = `1c-teamseason-ratified`;
+- candidate = `1d-roster-ratified`;
+- candidate registry entry exists;
+- production roster policy rule count = 8;
+- dispatcher exposes accepted Team + Offering + TeamSeason + four roster lifecycle keys only;
+- `roster.move` dispatcher key absent;
+- Captain mutation dispatcher keys absent;
+- assign requires active Membership and planning/active TeamSeason;
+- assign does not require Player role;
+- assign enforces nonterminal uniqueness;
+- Coach assign containment resolves through destination TeamSeason;
+- terminal roster path closes captain before roster mutation;
+- inactive is nonterminal and does not use terminal helper;
+- preflight is read-only;
+- mutation verifier does not mutate policy;
+- Team/TeamSeason/RosterAssignment/OrganizationGameOffering/CaptainAssignment counts remain 0.
+
+## Next gate
+
+1. Run read-only `layer1_roster_policy_preflight`.
+2. Require `allPassed: true`.
+3. Only then activate `1d-roster-ratified` through production `policy.activate`.
+4. Verify exactly one active policy and expected hash/version.
+5. Run `layer1_roster_mutation_verification`.
+6. Keep `roster.move` and CaptainAssignment replacement/close as separate later slices.
