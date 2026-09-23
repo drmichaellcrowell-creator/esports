@@ -2111,3 +2111,30 @@ The Base44 shell cannot see the same mounted app tree as `read_file`, and Deno i
 Run read-only `layer1_read_policy_preflight`.
 
 Only if it passes may `1g-layer1-read-ratified` be activated and `layer1_read_projection_verification` run.
+
+
+## Layer 1 read policy preflight — PASSED
+
+**Base44 checkpoint:** `6ab43fd9f6c323596bcf7c52` (`52b2f65f8ca1a9af73c4161854db237f64fa93e3`)
+
+Read-only `layer1_read_policy_preflight` result:
+
+- candidate version: `1g-layer1-read-ratified`
+- candidate hash: `f4624985e292b9c0b53f3f4bea7d8ea92328de90cb3ec6b636098aea48bc3cf4`
+- active version before activation: `1f-captain-ratified`
+- candidate hash matches registry: true
+- candidate rules match registry: true
+- exact Layer 1 read matrix: true
+- exactly 17 Layer 1 read rules: true
+- Player raw RosterAssignment read absent: true
+- candidate adds exactly 16 rules: true
+- candidate additions are read-only: true
+- Player projection scope exact: true
+- Player Captain self scope exact: true
+- Coach Captain scoped read exact: true
+- self scope fails closed: true
+- viewer_team_season_member scope fails closed: true
+- allPassed: true
+- failures: []
+
+Policy activation is now authorized for candidate `1g-layer1-read-ratified` through the existing production `policy.activate` path only.
