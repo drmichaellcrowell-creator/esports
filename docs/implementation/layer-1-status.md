@@ -1344,3 +1344,141 @@ Post-verifier cleanup independently confirmed:
 `ROSTERASSIGNMENT LIFECYCLE SLICE — PASSED`
 
 The next clean mutation family is `roster.move`, which should be admitted separately with its Class-A move request semantics, source-first safety ordering, destination-create continuation, source-captain closure, and R14 incomplete-move detection.
+
+
+## roster.move + R14 slice — pre-activation staged
+
+Status: **staged; candidate policy not yet active.**
+
+**Pre-activation Base44 checkpoint:** `6ab3f804dc0387c307a885cb` (`74ef00d2bebf77873cdfed3d1d43f13eea533f72`)
+
+### Operation staged
+
+New dispatcher key:
+
+- `roster.move`
+
+Captain mutation dispatcher keys remain absent.
+
+### Canonical move behavior staged
+
+`roster.move`:
+
+- Class-A durable logical request;
+- nonterminal source required;
+- destination TeamSeason must differ from source TeamSeason;
+- destination TeamSeason must be `planning|active`;
+- source and destination must resolve to the same Organization;
+- no nonterminal destination assignment may already exist for the same Membership;
+- destination status defaults to `active`, may be `reserve`;
+- optional destination `gamer_tag` is material move input;
+- source current CaptainAssignment closes before source terminalization;
+- source RosterAssignment transitions to `removed` before destination creation;
+- source recovery metadata stores `roster.move`, execution correlation, durable request id, and server-computed material-input hash;
+- destination row carries the move request as immutable `creation_request_id` and move recovery metadata;
+- same request + same material input returns/resumes the prior logical result;
+- same request + different material input conflicts;
+- retry may resume from a source already removed by the same durable move request when the destination is missing;
+- destination captaincy is never created automatically;
+- Organization-scoped audit required.
+
+### Coach scope boundary
+
+Coach authorization is server-derived against both:
+
+1. source RosterAssignment containment; and
+2. destination TeamSeason containment.
+
+Both must match. This prevents a coach scoped only to the source from moving a member into a destination they do not control. Additive scopes may satisfy source and destination independently.
+
+### Policy candidate
+
+Staged candidate:
+
+- key: `esports_v1`
+- version: `1e-roster-move-ratified`
+
+It retains all accepted `1d-roster-ratified` rules and adds exactly:
+
+- OrgAdmin `RosterAssignment/move` — same Organization
+- Coach `RosterAssignment/move` — `coach_scope`
+
+No CaptainAssignment mutation grant is admitted.
+
+Current persisted active policy remains `1d-roster-ratified`.
+
+### R14 recovery posture
+
+R14 is now active as detection-only:
+
+- detects a source RosterAssignment with:
+  - `participation_status = removed`;
+  - `last_operation_key = roster.move`;
+  - non-null move request id;
+  - non-null payload hash;
+  - no destination RosterAssignment carrying the same `creation_request_id` and `last_operation_key = roster.move`;
+- uses a 60-second operational settling window measured from source `updated_at`;
+- writes StandardOperational operator-review finding;
+- performs **no repair** and never guesses destination intent;
+- is wired into the scheduled reconciliation run;
+- R10 monitors the R14 heartbeat.
+
+### Verification staged
+
+`layer1_roster_move_policy_preflight`
+- read-only;
+- validates candidate hash/rules against registry;
+- requires exactly two move rules;
+- requires exact OrgAdmin same-org + Coach scoped move grants;
+- requires accepted eight-rule roster lifecycle retained;
+- requires no Captain mutation grants;
+- confirms active policy still `1d-roster-ratified`.
+
+`layer1_roster_move_verification`
+- synthetic-only;
+- tests successful source-first move;
+- verifies source recovery metadata;
+- verifies destination request identity/status/gamer tag;
+- verifies source captain closure;
+- verifies same-request replay with no second source/destination/captain version mutation;
+- verifies material-input request reuse conflict;
+- rejects same-TeamSeason move;
+- rejects pre-existing nonterminal destination before source/captain mutation;
+- rejects terminal destination before source mutation;
+- verifies Coach move with source + destination scope;
+- denies Coach with source scope but no destination scope;
+- injects stale incomplete move metadata;
+- verifies R14 detection, finding, and no repair;
+- verifies successful move audit;
+- cleans its synthetic fixtures.
+
+### Pre-activation boundary audit
+
+Verified:
+
+- current active policy = `1d-roster-ratified`;
+- candidate = `1e-roster-move-ratified`;
+- exactly two production move rules;
+- candidate registry entry exists;
+- dispatcher exposes `roster.move`;
+- Captain mutation dispatcher keys remain absent;
+- source captain closes before source terminalization;
+- source terminalizes before destination create;
+- durable request + payload hash recovery metadata is present;
+- resume path is present;
+- Coach authorization checks source and destination containment;
+- same-TeamSeason move is rejected;
+- destination must be planning/active;
+- R14 is wired, monitored, detection-only, metadata-driven, and uses settling window;
+- policy preflight is read-only;
+- mutation verifier does not mutate policy;
+- Team/TeamSeason/RosterAssignment/OrganizationGameOffering/CaptainAssignment counts remain 0.
+
+## Next gate
+
+1. Run read-only `layer1_roster_move_policy_preflight`.
+2. Require `allPassed: true`.
+3. Only then activate `1e-roster-move-ratified` through production `policy.activate`.
+4. Verify exactly one active policy and expected hash/version.
+5. Run `layer1_roster_move_verification`.
+6. Keep CaptainAssignment assign/replacement/manual-close as the next separate mutation family.
