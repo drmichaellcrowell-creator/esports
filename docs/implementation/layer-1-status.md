@@ -1237,3 +1237,26 @@ Verified:
 4. Verify exactly one active policy and expected hash/version.
 5. Run `layer1_roster_mutation_verification`.
 6. Keep `roster.move` and CaptainAssignment replacement/close as separate later slices.
+
+
+## RosterAssignment policy preflight — PASSED
+
+**Base44 checkpoint:** `6ab3eb70b935172208258ada` (`5b8b16c02e036ed28d7d6544c7759d8d4576c0b9`)
+
+Read-only `layer1_roster_policy_preflight` result:
+
+- candidate version: `1d-roster-ratified`
+- candidate hash: `fc9748423f821489e7e4246ea15e8d4d985778e57dac87dc9c9a8e07db42b2ce`
+- active version before activation: `1c-teamseason-ratified`
+- candidate hash matches registry: true
+- candidate rules match registry: true
+- exactly eight RosterAssignment lifecycle rules: true
+- roster actions exact: assign / transition / complete / remove
+- OrgAdmin roster rules exact: true
+- Coach scoped roster rules exact: true
+- no roster.move rule: true
+- no CaptainAssignment mutation rules: true
+- allPassed: true
+- failures: []
+
+Policy activation is now authorized for candidate `1d-roster-ratified` through the existing production `policy.activate` path only.
