@@ -1260,3 +1260,28 @@ Read-only `layer1_roster_policy_preflight` result:
 - failures: []
 
 Policy activation is now authorized for candidate `1d-roster-ratified` through the existing production `policy.activate` path only.
+
+
+## RosterAssignment mutation policy activation — PASSED
+
+**Activation correlation:** `2211be7f-febb-4489-b2bc-39fded9986da`  
+**Activated version:** `1d-roster-ratified`  
+**Activated hash:** `fc9748423f821489e7e4246ea15e8d4d985778e57dac87dc9c9a8e07db42b2ce`  
+**New policy UUID:** `3f91bf5b-8d4c-4fc9-a1a2-e932cbb7301d`  
+**Superseded policy UUID:** `c63bc844-fb27-49ae-abd6-a7330f5ff449`
+
+**Post-activation Base44 checkpoint:** `6ab3ede634d06b7c305f7973` (`5b8b16c02e036ed28d7d6544c7759d8d4576c0b9`)
+
+Verified directly after activation:
+
+- exactly one active AuthorizationPolicyVersion;
+- active version = `1d-roster-ratified`;
+- active hash = `fc9748423f821489e7e4246ea15e8d4d985778e57dac87dc9c9a8e07db42b2ce`;
+- Team = 0;
+- TeamSeason = 0;
+- RosterAssignment = 0;
+- OrganizationGameOffering = 0;
+- CaptainAssignment = 0;
+- no `roster.move`, `captain.assign`, or `captain.close` operation was run.
+
+The RosterAssignment lifecycle acceptance harness may now run.
