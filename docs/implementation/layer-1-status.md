@@ -823,3 +823,29 @@ Read-only `layer1_teamseason_policy_preflight` result:
 - failures: []
 
 Policy activation is now authorized for candidate `1c-teamseason-ratified` through the existing production `policy.activate` path only.
+
+
+## TeamSeason mutation policy activation — PASSED
+
+**Activation correlation:** `policy-activate-1790125165646-1c-teamseason-ratified`  
+**Activated version:** `1c-teamseason-ratified`  
+**Activated hash:** `f4feb56d0c838c12f60ccec6fe4f1698dcb531234c86cc800e64ea44cf4f1882`  
+**New policy UUID:** `c63bc844-fb27-49ae-abd6-a7330f5ff449`  
+**Superseded policy UUID:** `bf2071fd-ec85-49a5-a8c8-0ddb0f513e99`
+
+**Post-activation Base44 checkpoint:** `6ab324980a9ad5f5e8395aaf` (`157c0aed8d0e33cb2665af370d18d21aeaded162`)
+
+Verified directly after activation:
+
+- exactly one active AuthorizationPolicyVersion;
+- active version = `1c-teamseason-ratified`;
+- active hash = `f4feb56d0c838c12f60ccec6fe4f1698dcb531234c86cc800e64ea44cf4f1882`;
+- Team = 0;
+- TeamSeason = 0;
+- RosterAssignment = 0;
+- OrganizationGameOffering = 0;
+- CaptainAssignment = 0.
+
+Historical duplicate superseded rows with the same version label do not create an authorization ambiguity because the production loader requires exactly one active policy and one active row is present.
+
+The TeamSeason acceptance harness may now run. Completion remains intentionally fail-closed pending the later Roster/Captain cascade slice.
