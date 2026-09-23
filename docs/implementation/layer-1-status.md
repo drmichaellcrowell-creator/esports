@@ -1482,3 +1482,25 @@ Verified:
 4. Verify exactly one active policy and expected hash/version.
 5. Run `layer1_roster_move_verification`.
 6. Keep CaptainAssignment assign/replacement/manual-close as the next separate mutation family.
+
+
+## roster.move policy preflight — PASSED
+
+**Base44 checkpoint:** `6ab3fd7d0ad8977b1d17f1e7` (`74ef00d2bebf77873cdfed3d1d43f13eea533f72`)
+
+Read-only `layer1_roster_move_policy_preflight` result:
+
+- candidate version: `1e-roster-move-ratified`
+- candidate hash: `b7f75e00cae427d85c3b0f4f954a7d5edce1dfbe8a1ad1da22034d9b3104b00d`
+- active version before activation: `1d-roster-ratified`
+- candidate hash matches registry: true
+- candidate rules match registry: true
+- exactly two move rules: true
+- OrgAdmin move exact: true
+- Coach scoped move exact: true
+- accepted roster lifecycle rules retained: true
+- no CaptainAssignment mutation rules: true
+- allPassed: true
+- failures: []
+
+Policy activation is now authorized for candidate `1e-roster-move-ratified` through the existing production `policy.activate` path only.
