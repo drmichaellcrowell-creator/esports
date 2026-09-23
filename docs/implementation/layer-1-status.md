@@ -1771,3 +1771,28 @@ Read-only `layer1_captain_policy_preflight` result:
 - failures: []
 
 Policy activation is now authorized for candidate `1f-captain-ratified` through the existing production `policy.activate` path only.
+
+
+## CaptainAssignment mutation policy activation — PASSED
+
+**Activation correlation:** `policy-activate-1f-1790182688864-hlsf1a`  
+**Activated version:** `1f-captain-ratified`  
+**Activated hash:** `1038852cb36d906d88c88747d7a99b77899139d48f3c2e1523ac8ed2694c5f8f`  
+**New policy UUID:** `3f0d9721-9e48-4222-941c-3beaece3c8f0`  
+**Superseded policy UUID:** `d230d418-5a3a-4b8c-824b-7ad6f20ef647`
+
+**Post-activation Base44 checkpoint:** `6ab406f66a425eebcb4d3237` (`a4ea81e9e1fa61110e4fa252bceedd2212e83c33`)
+
+Verified directly after activation:
+
+- exactly one active AuthorizationPolicyVersion;
+- active version = `1f-captain-ratified`;
+- active hash = `1038852cb36d906d88c88747d7a99b77899139d48f3c2e1523ac8ed2694c5f8f`;
+- Team = 0;
+- TeamSeason = 0;
+- RosterAssignment = 0;
+- OrganizationGameOffering = 0;
+- CaptainAssignment = 0;
+- no captain.assign/captain.close mutations or R4/R5/R6/R17 acceptance tests were run.
+
+The CaptainAssignment synthetic acceptance harness may now run.
