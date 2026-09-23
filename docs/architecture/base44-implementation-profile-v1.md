@@ -339,7 +339,7 @@ For `roster.move`, the payload hash covers source RosterAssignment identity, des
 
 **CaptainAssignment recovery metadata (profile-only):** the same four fields are admitted. On replacement `captain.assign`, the superseded old row records the request id and a server-computed payload hash covering TeamSeason identity + incoming Membership identity. Old current captain is superseded before the replacement is created: transient vacancy is permitted; two effective captains are not.
 
-**TeamSeason completion ordering:** Base44 transitions the TeamSeason to `completed` first, then completes each non-terminal child RosterAssignment with version guards, then closes affected captains. R16 detects/repairs any residue.
+**TeamSeason completion ordering (Layer 1 closure ratification):** Base44 first closes affected current CaptainAssignments, then completes each non-terminal child RosterAssignment with version guards, then requires bounded stable-read confirmation of zero current captains and zero non-terminal child rosters, and only then transitions the TeamSeason to `completed`. This ordering intentionally fails toward less authority and less exposure on partial application: a transient still-active TeamSeason with already-closed child authority is permitted; a visible `completed` TeamSeason with still-effective roster/captain authority is not. R16 remains the deterministic repair path for any externally-created or legacy `completed` TeamSeason that still has non-terminal roster/captain residue.
 
 All correctness-critical writes use application-owned version guards and bounded stable-read confirmation. These mechanisms do not create an ACID claim.
 
