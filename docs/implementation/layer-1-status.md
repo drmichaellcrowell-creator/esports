@@ -1586,3 +1586,166 @@ Post-verifier cleanup independently confirmed:
 `ROSTER.MOVE + R14 SLICE — PASSED`
 
 The remaining Layer 1 mutation family is CaptainAssignment: captain.assign replacement semantics, manual OrgAdmin captain.close, Coach scoped assign with no manual close, current-captain ambiguity handling, and R17 incomplete-replacement detection.
+
+
+## CaptainAssignment slice — pre-activation staged
+
+Status: **staged; candidate policy not yet active.**
+
+**Pre-activation Base44 checkpoint:** `6ab40360634294c18974287d` (`a4ea81e9e1fa61110e4fa252bceedd2212e83c33`)
+
+### Operations staged
+
+New dispatcher keys:
+
+- `captain.assign`
+- `captain.close`
+
+### CaptainAssignment semantics staged
+
+`captain.assign`:
+- Class-A durable logical request;
+- active Membership required;
+- current Player RoleAssignment required;
+- exactly one qualifying RosterAssignment in `active|reserve` for the target Membership + TeamSeason;
+- TeamSeason must be `planning|active`;
+- Membership and TeamSeason must resolve to the same Organization;
+- OrgAdmin or Coach(scope) authorization;
+- at most one current CaptainAssignment per TeamSeason; multiple-current ambiguity fails closed;
+- TeamSeason-level CAS serialization fence;
+- replacement ordering supersedes old current captain before creating new captain;
+- replacement source metadata records `captain.assign`, execution correlation, durable request id, and server-computed payload hash over TeamSeason + incoming Membership;
+- replacement row carries immutable `creation_request_id`;
+- same request + same material input replays/resumes;
+- same request + different material input conflicts;
+- transient vacancy is permitted; two current captains are not intentionally created;
+- Organization-scoped RestrictedStudent audit required.
+
+`captain.close`:
+- manual close is OrgAdmin-only;
+- Coach has no manual-close grant;
+- target-state idempotent;
+- version-guarded `is_current → false`;
+- recovery metadata records Class-B captain.close;
+- Organization-scoped RestrictedStudent audit required.
+
+### Dependency activation
+
+Captain dependency semantics now activate:
+
+- Player RoleAssignment revocation closes all current captaincies for that Membership;
+- Membership deactivation closes all current captaincies for that Membership;
+- existing roster terminal and TeamSeason completion paths continue to close affected captaincies;
+- shared close behavior remains fail-toward-less-authority.
+
+### Reconciliation activation
+
+R4:
+- detects >1 current CaptainAssignment per TeamSeason;
+- RestrictedStudent;
+- detection-only/operator review;
+- no automatic winner selection.
+
+R5:
+- now also deterministically closes current CaptainAssignments attached to inactive Memberships;
+- close-only repair;
+- writes service audit.
+
+R6:
+- actual implementation is now extended to Layer 1 references:
+  - Team → Organization
+  - TeamSeason → Team
+  - RosterAssignment → Membership + TeamSeason, including wrong-tenant chain
+  - OrganizationGameOffering → Organization
+  - CaptainAssignment → Membership + TeamSeason, including wrong-tenant chain
+
+R17:
+- detects old CaptainAssignment superseded by `captain.assign` recovery metadata with request/hash but no replacement row carrying that `creation_request_id`;
+- 60-second operational settling window;
+- RestrictedStudent;
+- detection-only/operator review;
+- never guesses or creates replacement authority.
+
+R4 and R17 are wired into scheduled reconciliation and monitored by R10.
+
+### Policy candidate
+
+Staged candidate:
+
+- key: `esports_v1`
+- version: `1f-captain-ratified`
+
+It retains all accepted 1e grants and adds exactly three CaptainAssignment mutation grants:
+
+- OrgAdmin `captain.assign` — same Organization
+- OrgAdmin `captain.close` — same Organization
+- Coach `captain.assign` — `coach_scope`
+
+No Coach manual `captain.close` grant is added.
+
+An older OrgAdmin read grant for CaptainAssignment already exists in the inherited policy; this is not a new mutation grant.
+
+Current persisted active policy remains `1e-roster-move-ratified`.
+
+### Verification staged
+
+`layer1_captain_policy_preflight`
+- read-only;
+- validates candidate hash/rules against registry;
+- requires exactly three CaptainAssignment mutation rules;
+- exact OrgAdmin assign + close;
+- exact Coach scoped assign;
+- explicitly requires no Coach manual close;
+- confirms active policy still `1e-roster-move-ratified`.
+
+`layer1_captain_mutation_verification`
+- synthetic-only;
+- tests initial captain assignment;
+- Class-A replay and request-reuse conflict;
+- active Membership prerequisite;
+- Player Role prerequisite;
+- qualifying active/reserve roster prerequisite;
+- replacement old→closed/new→current/supersedes chain;
+- replacement replay idempotency;
+- OrgAdmin manual close + replay;
+- Coach scoped assign;
+- Coach manual close denial;
+- CoachScope audit provenance;
+- Player-role revoke closes captain;
+- Membership deactivation closes captain;
+- R4 detects multiple-current captains without repair;
+- R5 closes stale captain on inactive Membership;
+- R17 detects incomplete replacement without repair;
+- R6 detects wrong-tenant captain chain;
+- captain.assign success audit;
+- cleans its own fixtures.
+
+### Pre-activation boundary audit
+
+Verified:
+
+- current active policy = `1e-roster-move-ratified`;
+- candidate = `1f-captain-ratified`;
+- candidate registry entry exists;
+- dispatcher exposes captain.assign + captain.close;
+- active Membership / Player role / qualifying roster prerequisites are present;
+- TeamSeason-level serialization is present;
+- replacement vacates old captain before replacement create;
+- recovery request id + payload hash are persisted;
+- multiple-current state fails closed;
+- R4 and R17 are wired and monitored;
+- R4 and R17 are detection-only;
+- R5 CaptainAssignment close-only repair is active;
+- R6 Layer 1/captain reference checking is active;
+- Player-role revoke and Membership deactivation captain cascades are active;
+- policy preflight is read-only;
+- mutation verifier does not mutate policy;
+- Team/TeamSeason/RosterAssignment/OrganizationGameOffering/CaptainAssignment counts remain 0.
+
+## Next gate
+
+1. Run read-only `layer1_captain_policy_preflight`.
+2. Require `allPassed: true`.
+3. Only then activate `1f-captain-ratified` through production `policy.activate`.
+4. Verify exactly one active policy and expected hash/version.
+5. Run `layer1_captain_mutation_verification`.
