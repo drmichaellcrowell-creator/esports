@@ -1796,3 +1796,78 @@ Verified directly after activation:
 - no captain.assign/captain.close mutations or R4/R5/R6/R17 acceptance tests were run.
 
 The CaptainAssignment synthetic acceptance harness may now run.
+
+
+## CaptainAssignment slice — PASSED
+
+Status: **accepted — 20/20 synthetic-only assertions green.**
+
+**Post-pass Base44 checkpoint:** `6ab41c23c46737a4ed00772e` (`a4ea81e9e1fa61110e4fa252bceedd2212e83c33`)
+
+Active policy:
+
+- `1f-captain-ratified`
+- hash `1038852cb36d906d88c88747d7a99b77899139d48f3c2e1523ac8ed2694c5f8f`
+
+Acceptance verifier:
+
+- `layer1_captain_mutation_verification`
+- `syntheticOnly = true`
+- `total = 20`
+- `passed = 20`
+- `failed = 0`
+- `allPassed = true`
+- `failures = []`
+
+Verified behavior:
+
+- initial captain.assign succeeds;
+- exact Class-A replay returns the same CaptainAssignment;
+- same request id with different incoming Membership conflicts;
+- active Membership prerequisite is enforced;
+- current Player Role prerequisite is enforced;
+- qualifying active/reserve roster prerequisite is enforced;
+- replacement closes old current captain before creating replacement;
+- replacement carries correct supersedes_id linkage;
+- replacement replay is idempotent with no second old/new mutation;
+- OrgAdmin manual captain.close succeeds;
+- captain.close exact target-state replay is idempotent;
+- Coach(scope) captain.assign succeeds;
+- Coach manual captain.close is denied;
+- CoachScope authority identity is preserved in audit;
+- Player Role revocation closes dependent captain;
+- Membership deactivation closes dependent captain;
+- R4 detects multiple-current captains and performs no repair/winner selection;
+- R5 closes current captain on inactive Membership;
+- R17 detects incomplete captain replacement and performs no repair;
+- R6 detects wrong-tenant CaptainAssignment chain;
+- captain.assign success audit is present.
+
+### Timed-out first-run residue
+
+The first client invocation exceeded the 120-second client wait limit before the successful retry. Independent closure audit found one remaining open R5 finding from that earlier synthetic run:
+
+- finding UUID: `6a4f9e17-6fbe-48d7-863d-e3f67bfdce84`
+- type: `inactive_membership_grant`
+- resource: synthetic RoleAssignment `07939009-88ac-46e2-b268-7ec5d8c90995`
+- source correlation: `3b146f5f-420d-4f4a-ae36-d4b2e6d0af6a`
+
+The referenced RoleAssignment no longer existed, confirming the finding was orphaned acceptance-test residue. The finding was changed from `open` to `resolved`; its historical R5 heartbeat was retained.
+
+### Post-verifier cleanup independently confirmed
+
+- Team = 0
+- TeamSeason = 0
+- RosterAssignment = 0
+- OrganizationGameOffering = 0
+- CaptainAssignment = 0
+- open R4 findings = 0
+- open R5 findings = 0
+- open R6 findings = 0
+- open R17 findings = 0
+
+### Slice verdict
+
+`CAPTAINASSIGNMENT SLICE — PASSED`
+
+All Layer 1 mutation families are now implemented and individually accepted. The next step should be a Layer 1 closure/freeze audit across architecture parity, dispatcher/policy boundary, reconciliation coverage, entity/RLS state, synthetic-test cleanliness, and GitHub/Base44 state before declaring Layer 1 frozen.
