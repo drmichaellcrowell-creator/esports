@@ -1504,3 +1504,28 @@ Read-only `layer1_roster_move_policy_preflight` result:
 - failures: []
 
 Policy activation is now authorized for candidate `1e-roster-move-ratified` through the existing production `policy.activate` path only.
+
+
+## roster.move mutation policy activation — PASSED
+
+**Activation correlation:** `1a69dec3-f2c2-4dcc-89e4-ea837fe44104`  
+**Activated version:** `1e-roster-move-ratified`  
+**Activated hash:** `b7f75e00cae427d85c3b0f4f954a7d5edce1dfbe8a1ad1da22034d9b3104b00d`  
+**New policy UUID:** `d230d418-5a3a-4b8c-824b-7ad6f20ef647`  
+**Superseded policy UUID:** `3f91bf5b-8d4c-4fc9-a1a2-e932cbb7301d`
+
+**Post-activation Base44 checkpoint:** `6ab3fe7091e386b0460371de` (`74ef00d2bebf77873cdfed3d1d43f13eea533f72`)
+
+Verified directly after activation:
+
+- exactly one active AuthorizationPolicyVersion;
+- active version = `1e-roster-move-ratified`;
+- active hash = `b7f75e00cae427d85c3b0f4f954a7d5edce1dfbe8a1ad1da22034d9b3104b00d`;
+- Team = 0;
+- TeamSeason = 0;
+- RosterAssignment = 0;
+- OrganizationGameOffering = 0;
+- CaptainAssignment = 0;
+- no roster.move, captain.assign, or captain.close operation was run.
+
+The roster.move + R14 synthetic acceptance harness may now run.
