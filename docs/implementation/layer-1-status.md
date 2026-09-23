@@ -1749,3 +1749,25 @@ Verified:
 3. Only then activate `1f-captain-ratified` through production `policy.activate`.
 4. Verify exactly one active policy and expected hash/version.
 5. Run `layer1_captain_mutation_verification`.
+
+
+## CaptainAssignment policy preflight — PASSED
+
+**Base44 checkpoint:** `6ab404ea06004897e8bac251` (`a4ea81e9e1fa61110e4fa252bceedd2212e83c33`)
+
+Read-only `layer1_captain_policy_preflight` result:
+
+- candidate version: `1f-captain-ratified`
+- candidate hash: `1038852cb36d906d88c88747d7a99b77899139d48f3c2e1523ac8ed2694c5f8f`
+- active version before activation: `1e-roster-move-ratified`
+- candidate hash matches registry: true
+- candidate rules match registry: true
+- exactly three CaptainAssignment mutation rules: true
+- OrgAdmin assign exact: true
+- OrgAdmin close exact: true
+- Coach scoped assign exact: true
+- no Coach manual close: true
+- allPassed: true
+- failures: []
+
+Policy activation is now authorized for candidate `1f-captain-ratified` through the existing production `policy.activate` path only.
