@@ -583,3 +583,25 @@ The Base44 shell workspace still does not expose `/workspace/package.json`, so `
 4. Verify one active policy and expected hash/version.
 5. Run `layer1_offering_mutation_verification`.
 6. Do not begin TeamSeason/Roster/Captain mutations until this slice passes.
+
+
+## Offering policy preflight — PASSED
+
+**Base44 checkpoint:** `6ab31a02b20cb5ea6379e7a1` (`dde2b26649572b9affa04d987052331678292b83`)
+
+Read-only `layer1_offering_policy_preflight` result:
+
+- candidate version: `1b-offering-ratified`
+- candidate hash: `78626cd58f032ca9a25b0437e87bf9165ca69bef9ce6230f47e77c12c6f33b9f`
+- active version before activation: `1a-team-ratified`
+- candidate hash matches registry: true
+- candidate rules match registry: true
+- exactly two Offering mutation rules: true
+- Offering actions exact: create/transition
+- Offering rules OrgAdmin-only: true
+- accepted Team rules retained: true
+- no TeamSeason/Roster/Captain mutation rules: true
+- allPassed: true
+- failures: []
+
+Policy activation is now authorized for candidate `1b-offering-ratified` through the existing production `policy.activate` path only.
