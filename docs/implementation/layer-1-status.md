@@ -1529,3 +1529,60 @@ Verified directly after activation:
 - no roster.move, captain.assign, or captain.close operation was run.
 
 The roster.move + R14 synthetic acceptance harness may now run.
+
+
+## roster.move + R14 slice — PASSED
+
+Status: **accepted — 16/16 synthetic-only assertions green.**
+
+**Post-pass Base44 checkpoint:** `6ab3ff39a3d1c9b9c86a15f3` (`74ef00d2bebf77873cdfed3d1d43f13eea533f72`)
+
+Active policy:
+
+- `1e-roster-move-ratified`
+- hash `b7f75e00cae427d85c3b0f4f954a7d5edce1dfbe8a1ad1da22034d9b3104b00d`
+
+Acceptance verifier:
+
+- `layer1_roster_move_verification`
+- `syntheticOnly = true`
+- `total = 16`
+- `passed = 16`
+- `failed = 0`
+- `allPassed = true`
+- `failures = []`
+
+Verified behavior:
+
+- roster.move succeeds;
+- source RosterAssignment transitions to `removed`;
+- source recovery metadata records `roster.move`, durable request id, and material payload hash;
+- destination RosterAssignment is created with expected TeamSeason, status, gamer tag, and creation_request_id;
+- source current CaptainAssignment closes;
+- exact same move request replays to the same destination with no second source/destination/captain mutation;
+- same request id with changed material input conflicts;
+- same-TeamSeason move is rejected;
+- pre-existing nonterminal destination conflicts before source/captain mutation;
+- completed destination is denied before source mutation;
+- Coach with source + destination scope succeeds;
+- Coach scope authority identity is preserved in audit;
+- Coach without destination scope is denied without source mutation;
+- R14 detects stale incomplete move state;
+- R14 writes `incomplete_roster_move` finding;
+- R14 performs no repair;
+- successful roster.move audit is present.
+
+Post-verifier cleanup independently confirmed:
+
+- Team = 0
+- TeamSeason = 0
+- RosterAssignment = 0
+- OrganizationGameOffering = 0
+- CaptainAssignment = 0
+- open R14 findings = 0
+
+### Slice verdict
+
+`ROSTER.MOVE + R14 SLICE — PASSED`
+
+The remaining Layer 1 mutation family is CaptainAssignment: captain.assign replacement semantics, manual OrgAdmin captain.close, Coach scoped assign with no manual close, current-captain ambiguity handling, and R17 incomplete-replacement detection.
