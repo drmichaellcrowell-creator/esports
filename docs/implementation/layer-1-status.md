@@ -2179,3 +2179,52 @@ The second activation superseded the first after ~4.9 seconds. Both rows have th
 This duplicate activation history is retained rather than deleted or rewritten.
 
 The `layer1_read_projection_verification` acceptance gate may now run.
+
+
+## Layer 1 read/projection verifier cleanup remediation
+
+The first full `layer1_read_projection_verification` executions produced all green assertion results but returned HTTP 500 because the synthetic cleanup phase issued one delete request per fixture in a tight loop and hit a Base44 rate-limit throttle.
+
+Observed from the most recent throttled run:
+
+- all recorded assertions had `pass: true`;
+- failure occurred after assertion execution;
+- error = `Rate limit exceeded`;
+- `allPassed:false` reflected function-level cleanup failure, not an assertion failure;
+- no code or policy was modified by the verifier.
+
+Independent post-run audit confirmed:
+
+- all `l1-read-*` synthetic fixture rows were actually removed;
+- 25 open R9 findings were created by a scheduled sweep while those fixtures were temporarily present;
+- all 25 findings referenced the same synthetic run;
+- after cleanup, the next scheduled R9 and overall reconciliation runs were clean.
+
+The 25 stale synthetic R9 findings were resolved after confirming their fixture resources were gone.
+
+Verifier cleanup was then changed to:
+
+- paced deletion instead of a tight delete burst;
+- bounded retry/backoff for 429/rate-limit responses;
+- explicit cleanup result reporting;
+- cleanup occurs before the final response;
+- `allPassed` requires both assertion success and cleanup success;
+- cleanup failures are surfaced in `cleanup.failures` rather than hidden in `finally`.
+
+**Pre-retry Base44 checkpoint:** `6ab445775e29aa603e77a5e8`  
+**Runtime commit:** `9833052e323f6dc64b8d4c6d48a49eb6632f57ef`
+
+Pre-retry state independently verified:
+
+- active policy = `1g-layer1-read-ratified`
+- active hash = `f4624985e292b9c0b53f3f4bea7d8ea92328de90cb3ec6b636098aea48bc3cf4`
+- Team = 0
+- TeamSeason = 0
+- RosterAssignment = 0
+- OrganizationGameOffering = 0
+- CaptainAssignment = 0
+- open R9 findings = 0
+- latest R9 heartbeat = clean / 0 findings
+- latest overall reconciliation heartbeat = clean / 0 findings
+
+The full read/projection acceptance verifier should now be rerun once.
