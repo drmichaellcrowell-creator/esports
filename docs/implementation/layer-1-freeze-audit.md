@@ -263,3 +263,55 @@ Freeze blocker disposition:
 **NOT READY TO FREEZE — one blocker remains (F2).**
 
 The next dedicated closure remediation slice is the Layer 1 read/projection boundary.
+
+
+---
+
+# Final Freeze Decision
+
+**Date:** 2026-09-23  
+**Verdict:** **LAYER 1 — FROZEN**
+
+All four previously identified freeze blockers are closed:
+
+- **F1 CLOSED** — TeamSeason completion ordering ratified in Amendment 004 and profile-aligned.
+- **F2 CLOSED** — canonical Layer 1 read boundary and RosterDisplayProjection implemented and accepted.
+- **F3 CLOSED** — reconciliation schema/runtime sweep-key parity restored.
+- **F4 CLOSED** — R9 semantics corrected and scheduled reconciliation clean.
+
+## Read/projection acceptance
+
+Gate A:
+- `layer1_read_access_verification`
+- 23/23 passed
+- cleanup passed
+
+Gate B:
+- `layer1_roster_projection_verification`
+- 7/7 passed
+- cleanup passed
+
+Combined:
+- 30/30 canonical read/projection assertions accepted.
+
+## Final runtime posture
+
+- active policy = `1g-layer1-read-ratified`
+- active policy hash = `f4624985e292b9c0b53f3f4bea7d8ea92328de90cb3ec6b636098aea48bc3cf4`
+- exactly one active policy
+- all Layer 1 domain counts = 0
+- all active Layer 1 reconciliation findings = 0
+- latest R9 = clean
+- latest overall reconciliation = clean
+- direct client CRUD remains denied
+
+## Freeze checkpoint
+
+- Base44 checkpoint: `6ab46ef874248a23b98366e7`
+- Base44 runtime commit: `107c1ee5fad1b1977615551e9f478d71b76c21f8`
+
+## Freeze rule
+
+Future implementation may depend on Layer 1 as stable substrate.
+
+Any future change to Layer 1 authorization, lifecycle semantics, projection fields, reconciliation semantics, tenant containment, or persistent field shape requires an explicit architecture amendment before implementation.
