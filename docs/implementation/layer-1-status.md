@@ -2281,3 +2281,46 @@ Pre-run state:
 - open R9 findings = 0.
 
 Acceptance requires Gate A = 23/23 and Gate B = 7/7, both with cleanup passed.
+
+
+## Layer 1 read acceptance Gate A — PASSED
+
+Verifier: `layer1_read_access_verification`
+
+Result:
+- syntheticOnly = true
+- activePolicy = `1g-layer1-read-ratified`
+- total = 23
+- expectedTotal = 23
+- caseCountMatches = true
+- passed = 23
+- failed = 0
+- allPassed = true
+- failures = []
+- cleanup.passed = true
+- cleanup.deleted = 40
+- cleanup.failures = []
+
+Coverage accepted:
+- OrgAdmin Team/TeamSeason/Offering/Roster/Captain/projection reads;
+- cross-Organization Team denial;
+- Coach scoped Team/TeamSeason/Offering/Roster/Captain/projection reads;
+- Coach wrong-Team, wrong-game Offering, wrong-projection denial;
+- Player same-Organization Team/TeamSeason/Offering reads;
+- Player teammate raw RosterAssignment denial;
+- Player own raw RosterAssignment denial;
+- Player own CaptainAssignment read;
+- Player teammate CaptainAssignment denial.
+
+Independent post-run verification:
+- Team = 0
+- TeamSeason = 0
+- RosterAssignment = 0
+- OrganizationGameOffering = 0
+- CaptainAssignment = 0
+- open R9 findings = 0
+- latest R9 heartbeat = clean / 0 findings
+- latest overall reconciliation heartbeat = clean / 0 findings
+- active policy remains `1g-layer1-read-ratified`
+
+Gate A is formally accepted. Gate B (`layer1_roster_projection_verification`) remains.
