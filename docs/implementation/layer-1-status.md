@@ -2324,3 +2324,70 @@ Independent post-run verification:
 - active policy remains `1g-layer1-read-ratified`
 
 Gate A is formally accepted. Gate B (`layer1_roster_projection_verification`) remains.
+
+
+## Layer 1 final freeze audit — PASSED
+
+**Freeze verdict:** `LAYER 1 — FROZEN`
+
+**Final Base44 checkpoint:** `6ab46ef874248a23b98366e7`  
+**Frozen runtime commit:** `107c1ee5fad1b1977615551e9f478d71b76c21f8`  
+**Active production policy:** `1g-layer1-read-ratified`  
+**Active policy hash:** `f4624985e292b9c0b53f3f4bea7d8ea92328de90cb3ec6b636098aea48bc3cf4`
+
+### Final acceptance evidence
+
+Mutation slices:
+- Team — 12/12
+- OrganizationGameOffering — 14/14
+- TeamSeason standalone — 14/14
+- TeamSeason completion — 15/15
+- RosterAssignment lifecycle — 22/22
+- roster.move + R14 — 16/16
+- CaptainAssignment + R4/R5/R6/R17 — 20/20
+
+Read/projection closure:
+- Gate A `layer1_read_access_verification` — 23/23
+- Gate B `layer1_roster_projection_verification` — 7/7
+- combined read/projection contract — 30/30
+
+### Final runtime state
+
+- Team = 0
+- TeamSeason = 0
+- RosterAssignment = 0
+- OrganizationGameOffering = 0
+- CaptainAssignment = 0
+- open R4 = 0
+- open R5 = 0
+- open R6 = 0
+- open R9 = 0
+- open R14 = 0
+- open R15 = 0
+- open R16 = 0
+- open R17 = 0
+- latest R9 heartbeat = clean / 0 findings
+- latest overall reconciliation heartbeat = clean / 0 findings
+- exactly one active AuthorizationPolicyVersion = true
+
+### Final architecture parity
+
+- TeamSeason completion ordering formally ratified by Amendment 004.
+- Reconciliation schemas enumerate all active Layer 1 sweep keys.
+- R9 semantics corrected for idempotent/no-op success behavior.
+- Canonical Layer 1 read grants are present.
+- Player raw RosterAssignment read is absent.
+- Player CaptainAssignment read is self-only.
+- Player RosterDisplayProjection requires viewer_team_season_member.
+- Coach read containment uses centralized CoachScope resolution.
+- RosterDisplayProjection exposes only canonical safe fields.
+- direct client CRUD RLS remains denied on persistent Layer 1 entities.
+
+### Repository state at freeze
+
+- branch: `layer-1-foundation-substrate-v2`
+- merge base: `c3270ed7f1dd10642e82793b84833990b712e9ec`
+- ahead of main: 42 commits
+- behind main: 0 commits
+
+Layer 1 may now be treated as frozen. No Layer 2 implementation should mutate Layer 1 contracts without a new explicit architecture amendment.
