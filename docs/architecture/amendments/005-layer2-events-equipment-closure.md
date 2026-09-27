@@ -1,6 +1,6 @@
 # Amendment 005 — Layer 2 Events/Attendance + Equipment Architecture Closure
 
-**Status:** DRAFT FOR RATIFICATION  
+**Status:** INCORPORATED DRAFT — PENDING RATIFICATION  
 **Drafted:** 2026-09-27  
 **Pinned predecessor:** `main@ae22063a8471875f9940fe46dd954cbfe57916c7`  
 **Applies to:** Canonical contract + Base44 v1 profile  
