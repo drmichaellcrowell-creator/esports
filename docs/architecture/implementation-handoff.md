@@ -2,7 +2,7 @@
 
 ## 1. What is authoritative
 
-**`implementation-contract.md`** is the sole source of truth for implementation. It contains the complete, corrected architecture, including incorporated Amendments 001–005. Amendment 003 closes Layer 1 Team/Roster architecture; Amendment 004 ratifies the Base44 TeamSeason completion ordering; Amendment 005 closes Layer 2 Events/Practice/Attendance/Availability + Equipment architecture. An architecture amendment does not by itself authorize runtime implementation; implementation begins only from a work order pinned to the post-amendment `main` SHA.
+**`implementation-contract.md`** is the sole source of truth for implementation. On current `main`, Amendments 001–004 are ratified and in force. On this architecture branch, Amendment 005 is incorporated across the contract/profile/handoff for consistency review but remains pending ratification until its architecture PR merges. Amendment 003 closes Layer 1 Team/Roster architecture; Amendment 004 ratifies the Base44 TeamSeason completion ordering; Amendment 005 proposes the complete Layer 2 Events/Practice/Attendance/Availability + Equipment closure. **Do not implement Layer 2 from this review branch.** Runtime implementation begins only from a work order pinned to the post-amendment `main` SHA after ratification/merge.
 
 ### 1.1 The active v1 substrate profile
 
