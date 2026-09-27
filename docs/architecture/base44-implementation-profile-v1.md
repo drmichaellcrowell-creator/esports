@@ -10,7 +10,7 @@
 Precedence, exactly:
 
 1. **`implementation-contract.md` remains the canonical, full-strength architecture.** This profile does not rewrite it, does not amend it, and does not make any of its statements false. The contract describes the target guarantees; this profile describes which of those guarantees the scoped Base44 v1 implements *differently*, and how the difference is contained.
-2. **Amendments 001–005 remain in force as incorporated into the canonical contract.** Amendment 001 bootstrap semantics, Amendment 002 Membership lifecycle semantics, Amendment 003 Layer 1 Team/Roster semantics, Amendment 004 TeamSeason completion ordering ratification, and Amendment 005 Layer 2 Events/Attendance + Equipment closure are unchanged; this profile records only Base44-specific enforcement/recovery differences.
+2. **Amendments 001–004 remain in force as incorporated into the canonical contract.** Amendment 005 Layer 2 Events/Attendance + Equipment closure is incorporated into this architecture branch for consistency review but remains pending ratification until its architecture PR merges. This profile records only Base44-specific enforcement/recovery differences; until Amendment 005 is ratified, its Layer 2 additions are proposed profile behavior, not an active production authorization.
 3. **Where this profile is silent, the canonical contract governs.** Silence is never permission. In particular, silence never converts a contract prohibition into an allowance.
 4. **This profile may narrow, never widen.** A deviation recorded below may reduce what v1 implements or change how a guarantee is enforced. No deviation grants an actor authority the contract does not grant, exposes data the contract does not expose, or relaxes a Section 10 prohibition.
 
@@ -762,14 +762,13 @@ Listed so no future deviation can be argued into existence by silence:
 
 ## 14. Ratification record
 
-4. **Layer 2 Events/Attendance + Equipment recovery posture** — approved by Amendment 005: immutable EventMaterializationBatch, draft-last visibility ordering, inert pending EquipmentAssignment, I18–I30, R18–R30, Game-scope deferral, and Communication/Outbox exclusion remain binding for Base44 v1.
-
-All architecture decisions listed below have been ratified. **No item in this profile is awaiting ratification.**
+Items 1–3 below are ratified and in force. Item 4 is incorporated on this architecture branch and remains **pending ratification** until the Amendment 005 architecture PR merges.
 
 | # | Decision | Outcome | Where it lives |
 |---|---|---|---|
 | 1 | **Restriction domain** — `ParticipationRestriction` and `RestrictionReview` admitted as a derived consequence of `lineup.lock` being in scope | **Approved**, bounded to canonical lineup and participation gating. `lineup.lock` will not ship with the restriction-clear leg unevaluated. Conduct remains excluded and is not broadened by this. | Sections 3.1, 3.4 |
 | 2 | **`match_schedule.supersede` Outbox behaviour** — no `OutboxEvent` while Communication is excluded | **Approved** as a scoped profile deviation. Domain mutation and operational AuditLog remain required; no side effect exists because no consumer exists; admitting Communication reopens the requirement and needs the dedicated Communication gate. | Sections 5.1 (Invariant 14), 8.1 |
 | 3 | **Layer 1 Team/Roster Base44 recovery posture** — non-atomic move/replacement/cascade containment, I14–I17, R14–R17, and Game-scope deferral | **Approved** by Amendment 003. Canonical semantics remain in the contract; Base44-only recovery metadata and ordering live in this profile. | Sections 5.7, 7.2, 10.2 |
+| 4 | **Layer 2 Events/Attendance + Equipment recovery posture** — immutable EventMaterializationBatch, draft-last Event visibility ordering, inert pending EquipmentAssignment, I18–I30, R18–R30, Game-scope deferral, and Communication/Outbox exclusion | **Pending ratification** in Amendment 005. It becomes active profile behavior only after the architecture PR merges. | Sections 5.8, 7.2, 10.2 |
 
 A future item that requires a decision is added to this table by an architecture gate, not by an implementation agent. An implementation agent that believes it needs one stops and requests the gate (Section 0).
