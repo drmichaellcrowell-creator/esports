@@ -482,10 +482,10 @@ Class-A logical creation/replacement operations use immutable request identity a
 | `equipment_allocation.transition` | OrgAdmin | active Allocation; no active/pending Assignment to deactivate | active→inactive | Required |
 | `equipment_assignment.assign` | OrgAdmin, Coach(allocation scope) | Asset available; active Allocation; no active/pending Assignment; destination valid | pending→active Assignment + Asset assigned | Required |
 | `equipment_assignment.correct` | OrgAdmin; Coach while tenure active/in scope | one current row; immutable asset/assignee | superseding correction | Required |
-| `equipment_condition.record` / `.correct` | OrgAdmin, Coach(allocation scope) | valid Asset/context/current row | ConditionAssessment create/supersede | Required |
+| `equipment_condition.record` / `equipment_condition.correct` | OrgAdmin, Coach(allocation scope) | valid Asset/context/current row | ConditionAssessment create/supersede | Required |
 | `equipment_issue.report` | Player window, Coach(allocation scope), OrgAdmin | valid Asset/tenure; Player must satisfy narrow window | IssueReport | Required |
 | `equipment_issue.correct` | OrgAdmin, Coach(allocation scope) | one current issue | superseding issue | Required |
-| `equipment_service.record` / `.correct` | OrgAdmin | valid Asset/current row | ServiceRecord create/supersede | Required |
+| `equipment_service.record` / `equipment_service.correct` | OrgAdmin | valid Asset/current row | ServiceRecord create/supersede | Required |
 | `equipment.return` | OrgAdmin, Coach(allocation scope) | current active Assignment | ConditionAssessment + Asset disposition + Assignment close | Required |
 | `equipment.administrative_closure` | OrgAdmin, Coach(allocation scope) | current active Assignment; explicit legal resulting status | Asset disposition + Assignment close | Required |
 | `equipment.transfer` | OrgAdmin, Coach(allocation scope) | current active source; destination valid in same allocation containment | pending destination + source close + destination activation | Required |
