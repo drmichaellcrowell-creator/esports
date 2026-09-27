@@ -55,6 +55,8 @@ The following are binding across both Layer 2 tracks.
 - `location_label: string|null` — bounded, max 160 chars; operational location only, no sensitive narrative.
 - `status: draft | scheduled | in_progress | completed | cancelled`.
 - `recurring_event_series_id: uuid|null` — immutable once set; same TeamSeason.
+- `series_occurrence_local_start: string|null` — immutable local date-time identity for a generated occurrence; null for non-series Events.
+- `series_revision: integer|null` — series revision from which a draft occurrence was generated; null for non-series Events.
 - `supersedes_event_id: uuid|null` — set only for postponement/supersession; predecessor must be same TeamSeason.
 - `scheduled_materialization_request_id: uuid|null` — set only when `draft→scheduled` completes.
 - `scheduled_materialization_hash: string|null` — server-computed material-input hash for the accepted expectation snapshot.
@@ -146,6 +148,7 @@ Unknown/missing/duplicate-current expectation state denies.
 - `days_of_week` — non-empty subset of `monday|tuesday|wednesday|thursday|friday|saturday|sunday`.
 - `location_label|null`.
 - `status: active | ended`.
+- `revision` — positive integer, incremented by every accepted series edit.
 - `created_at`, `updated_at`, provenance, `correlation_id`.
 - `creation_request_id`.
 - `version`.
@@ -157,7 +160,11 @@ Unknown/missing/duplicate-current expectation state denies.
 - Scheduled/in-progress/completed/cancelled occurrences are historical facts and are never rewritten by a series edit.
 - `ended` is terminal.
 - Series occurrence generation creates draft Event rows only.
+- occurrence identity is unique by `(recurring_event_series_id, series_occurrence_local_start)`.
+- every generated draft Event records the producing `series_revision`.
+- series update increments `revision`, then updates only draft occurrences to that revision; scheduled or terminal occurrences remain untouched.
 - recurrence generation never schedules/materializes expectations by itself.
+- the forward-generation window is eight weeks from the service run's local-calendar date in the series time zone.
 
 ---
 
@@ -177,6 +184,8 @@ Unknown/missing/duplicate-current expectation state denies.
 - `materialization_request_id|null`.
 - `supersedes_id|null`.
 - `is_current: boolean`.
+- `replacement_request_id: uuid|null` — written to the superseded row before replacement creation.
+- `replacement_material_hash: string|null` — server-computed recovery hash.
 - `created_at`, provenance, `correlation_id`.
 - `creation_request_id`.
 - `version`.
@@ -276,6 +285,8 @@ Availability does not alter expectation and does not determine attendance.
 - `recorded_at`.
 - `supersedes_id|null`.
 - `is_current`.
+- `replacement_request_id: uuid|null`.
+- `replacement_material_hash: string|null`.
 - `created_at`, provenance, `correlation_id`.
 - `creation_request_id`.
 - `version`.
@@ -403,6 +414,8 @@ This remains a named service operation invoked as part of `event.transition(draf
 
 ### Actor rules
 
+- `event.create` may create only non-Practice Event types. A Practice Event is created only by `practice.create`.
+- `practice.create` creates the draft Event first and then its 1:1 Practice row under one logical request; the Event remains draft until the Practice row exists.
 - Event / recurring / Practice / activity writes: OrgAdmin or Coach with matching Event TeamSeason scope, except template management also permits OrgAdmin and Coach in the same Organization.
 - Event expectation supersession / adjustment / Attendance: OrgAdmin or Coach(scope).
 - Availability self-response: Player self for an Event where current expectation exists.
@@ -419,6 +432,17 @@ Every Layer 2A client-callable write above is audit-required **except** `availab
 Communication is excluded in Base44 v1, so no Layer 2A operation writes Notification or OutboxEvent.
 
 ---
+
+# 3.1 Practice creation recovery
+
+`practice.create` is an ordered Base44 two-row workflow:
+
+1. create/replay Event with `event_type=practice`, status `draft`, and the logical request id;
+2. create/replay the unique Practice row linked to that Event;
+3. write the operation AuditLog event;
+4. stable verify the 1:1 pair.
+
+A draft Practice Event without its Practice row grants no Player visibility and is safe but incomplete. R20 may deterministically create the missing Practice row only when the Event was created by `practice.create`, is still draft, and the request identity is unambiguous. Duplicate Practice rows are never auto-repaired.
 
 # 4. Event scheduling / materialization algorithm
 
@@ -602,12 +626,14 @@ One or more correction rows may represent that tenure. Exactly one row is curren
 - `purpose_code: individual_use | team_use | practice | competition | other_operational`.
 - `assigned_at`.
 - `due_at|null`.
-- `standing: active | closed`.
+- `standing: pending | active | closed`.
 - `closure_reason: returned | administrative | transferred | null`.
 - `closed_at|null`.
 - `supersedes_id|null`.
 - `is_current`.
-- `pending_operation: null | return | administrative_closure | transfer`.
+- `replacement_request_id: uuid|null`.
+- `replacement_material_hash: string|null`.
+- `pending_operation: null | assign | return | administrative_closure | transfer`.
 - `pending_request_id: uuid|null`.
 - `pending_material_hash: string|null`.
 - timestamps/provenance/correlation
@@ -617,6 +643,7 @@ One or more correction rows may represent that tenure. Exactly one row is curren
 ### Rules
 
 - exactly one current row per `assignment_tenure_id`;
+- `pending` is non-effective: it grants no Player read/possession semantics and does not appear in EquipmentProjection;
 - at most one current active Assignment across all tenures for an Asset;
 - assignee must resolve to the same Organization;
 - correction creates a new current row for the same tenure and supersedes the prior row;
@@ -641,6 +668,8 @@ Fields:
 - `assessed_at`
 - `supersedes_id|null`
 - `is_current`
+- `replacement_request_id: uuid|null`
+- `replacement_material_hash: string|null`
 - timestamps/provenance/correlation
 - `creation_request_id`
 - `version`
@@ -663,6 +692,8 @@ Fields:
 - `reported_at`
 - `supersedes_id|null`
 - `is_current`
+- `replacement_request_id: uuid|null`
+- `replacement_material_hash: string|null`
 - timestamps/provenance/correlation
 - `creation_request_id`
 - `version`
@@ -685,6 +716,8 @@ Fields:
 - `serviced_at`
 - `supersedes_id|null`
 - `is_current`
+- `replacement_request_id: uuid|null`
+- `replacement_material_hash: string|null`
 - timestamps/provenance/correlation
 - `creation_request_id`
 - `version`
@@ -793,7 +826,7 @@ No raw Membership UUID, Asset UUID, Assignment UUID, service record, location re
 
 ### Derivation
 
-Projection includes the viewer's current Assignment tenures and most recent closed tenures needed to show unresolved own issues.
+Projection includes every current active Assignment tenure for the viewer plus any closed viewer tenure that still has a current own IssueReport with `issue_status=open`. No arbitrary historical lookback is used.
 
 `action_needed` precedence:
 
@@ -808,6 +841,19 @@ All clock comparison uses UTC `now`; UI localizes for display.
 ---
 
 # 10. Equipment workflow ordering in Base44 v1
+
+## 10.0 `equipment_assignment.assign`
+
+Order:
+
+1. validate active Allocation, destination assignee and actor authority;
+2. create/replay destination Assignment with `standing=pending` and `pending_operation=assign`;
+3. write AuditLog event;
+4. CAS Asset.status to `assigned`;
+5. CAS Assignment `pending→active`, clear pending metadata **last**;
+6. stable verify exactly one active Assignment exists for the Asset.
+
+A pending Assignment is inert and invisible to Player possession/projection rules. If the workflow stalls, R28 reports it.
 
 ## 10.1 `equipment.return`
 
@@ -855,15 +901,15 @@ Order:
 
 1. validate source active Assignment, destination, Allocation and actor authority;
 2. set source pending transfer metadata;
-3. create/replay destination Assignment in a **pending-inert** form represented by `standing=active` but not effective until source closure? **No.** To avoid two active effective assignments, destination creation occurs only after source close.
+3. create/replay destination Assignment with `standing=pending`, the transfer request id, and no Player-effective authority;
 4. write AuditLog before new authority/visibility is granted;
 5. close source Assignment with reason `transferred`;
-6. create destination active Assignment using transfer request id;
+6. CAS destination Assignment `pending→active` and clear destination pending metadata;
 7. keep Asset.status=`assigned`;
 8. stable verify exactly one current active Assignment for Asset;
-9. clear any residual source pending metadata.
+9. clear residual source pending metadata.
 
-If failure occurs after source close but before destination create, Asset remains `assigned` with zero active Assignment and R25 reports the incomplete transfer. The system never auto-selects or invents a destination.
+If failure occurs after source close but before destination activation, Asset remains `assigned` with one inert pending destination and zero active Assignment; R25 reports the incomplete transfer. The system never auto-selects or invents a different destination.
 
 ---
 
@@ -882,6 +928,8 @@ Add after I17.
 - **I26 — Equipment current-chain uniqueness:** at most one current correction row per assignment tenure / condition / issue / service correction key.
 - **I27 — Equipment workflow completion:** pending return/admin/transfer metadata may not remain beyond settling window without a corresponding completed material result.
 - **I28 — Equipment asset/assignment standing compatibility:** an active Assignment requires Asset.status=assigned; Asset.status=available may not coexist with an active Assignment.
+- **I29 — Layer 2 supersession completion:** when an AO+S row is marked non-current with a replacement_request_id, exactly one replacement row with matching creation_request_id must appear after the settling window.
+- **I30 — Event postponement completion:** a predecessor with pending postpone request may not remain non-cancelled past the settling window once its successor request is created.
 
 ---
 
@@ -919,9 +967,9 @@ Detect missing/duplicate Practice for a practice Event or Practice pointing to n
 
 ## R21 — Recurring occurrence drift
 
-Detect duplicate occurrence identity or active series with a missing expected draft occurrence inside the configured forward-generation window.
+Detect duplicate occurrence identity, active series with a missing expected draft occurrence inside the eight-week forward-generation window, or a draft occurrence whose `series_revision` does not equal the current series revision.
 
-**Repair:** Missing draft occurrence may be deterministically created only when no conflicting row exists; duplicates are detect-only.
+**Repair:** Missing draft occurrence may be deterministically created only when no conflicting row exists; a draft occurrence with stale series_revision may be deterministically updated to current series metadata; duplicates are detect-only.
 
 **Review:** report every repair; duplicates always operator review.  
 **Cadence:** hourly.  
@@ -991,7 +1039,37 @@ Detect multiple current rows within any Assignment tenure or Condition/Issue/Ser
 **Review:** Always.  
 **Cadence:** hourly.
 
-R10 must monitor R18–R27 in addition to the frozen prior sweep set.
+## R28 — Incomplete Equipment assignment activation
+
+Detect pending Assignment with `pending_operation=assign` past settling window, or Asset.status=assigned with only a matching pending Assignment and no active Assignment.
+
+**Repair:** when the pending Assignment, active Allocation, Asset version and audit correlation remain unambiguous, activate that exact pending Assignment; otherwise detect-only.
+
+**Review:** report every repair; unresolved cases operator review.  
+**Cadence:** every 5 minutes.  
+**Sensitivity:** RestrictedStudent.
+
+## R29 — Incomplete Layer 2 supersession replacement
+
+Detect a superseded EventExpectation, AttendanceRecord, EquipmentAssignment correction row, ConditionAssessment, IssueReport or ServiceRecord carrying `replacement_request_id=R` with no replacement row whose `creation_request_id=R` after the settling window.
+
+**Repair:** No. Replacement content is a human-authored fact and is never invented by reconciliation.  
+**Review:** Always.  
+**Cadence:** hourly.  
+**Sensitivity:** sensitivity of the referenced chain.
+
+## R30 — Incomplete Event postponement
+
+Detect Event `pending_operation=postpone` past settling window where the intended successor is missing or the predecessor remains non-cancelled after successor creation.
+
+**Repair:** No. Schedule intent is operator-reviewed.  
+**Review:** Always.  
+**Cadence:** hourly.  
+**Sensitivity:** StandardOperational.
+
+All Layer 2 settling windows are 5 minutes unless a workflow section states otherwise.
+
+R10 must monitor R18–R30 in addition to the frozen prior sweep set.
 
 ---
 
@@ -1004,17 +1082,20 @@ The post-Amendment policy version must add only the Layer 2 grants below while p
 May:
 
 - read Event/Practice through `viewer_has_expectation`;
+- read active PracticeActivityTemplate in own Organization;
 - read own current/history EventParticipationExpectation, EventParticipationAdjustment, AvailabilityResponse, AttendanceRecord;
 - append own `availability.respond`;
+- read EquipmentAssetType in own Organization;
+- read EquipmentAsset when currently assigned to self;
+- read own EquipmentAssignment, EquipmentConditionAssessment and EquipmentIssueReport rows;
 - read own EquipmentProjection;
 - create `equipment_issue.report` only under Section 8 predicate.
 
 May not:
 
 - raw-read another Player's participation/attendance/equipment records;
-- raw-read EquipmentAssignment/Condition/Issue rows beyond the projection/self operation;
 - read EquipmentServiceRecord;
-- mutate Event/Practice.
+- mutate Event/Practice or equipment administration.
 
 ## Coach
 
