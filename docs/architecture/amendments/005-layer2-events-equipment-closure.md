@@ -60,6 +60,8 @@ The following are binding across both Layer 2 tracks.
 - `supersedes_event_id: uuid|null` — set only for postponement/supersession; predecessor must be same TeamSeason.
 - `scheduled_materialization_request_id: uuid|null` — set only when `draft→scheduled` completes.
 - `scheduled_materialization_hash: string|null` — server-computed material-input hash for the accepted expectation snapshot.
+- `scheduled_materialization_count: integer|null` — accepted snapshot size.
+- `scheduled_materialization_batch_id: uuid|null` — Base44-only internal batch used to recover the accepted snapshot.
 - `pending_operation: null | materialize_expectations | postpone`.
 - `pending_request_id: uuid|null`.
 - `pending_material_hash: string|null`.
@@ -444,7 +446,74 @@ Communication is excluded in Base44 v1, so no Layer 2A operation writes Notifica
 
 A draft Practice Event without its Practice row grants no Player visibility and is safe but incomplete. R20 may deterministically create the missing Practice row only when the Event was created by `practice.create`, is still draft, and the request identity is unambiguous. Duplicate Practice rows are never auto-repaired.
 
+# 3.2 Exact Layer 2A operation matrix
+
+| Operation | Actor | Preconditions | Writes | Audit | Idempotency |
+|---|---|---|---|---|---|
+| `event.create` | OrgAdmin, Coach(scope) | active TeamSeason in actor scope; event_type != practice | draft Event | required | Class A |
+| `event.update` | OrgAdmin, Coach(scope) | Event draft | display/schedule/time-zone/location fields under CAS | required | Class B |
+| `event.transition` | OrgAdmin, Coach(scope) forward only | legal transition; draft→scheduled invokes materialization | Event status; expectation batch/set when scheduling | required | Class B + internal materialization request |
+| `event.cancel` | OrgAdmin, Coach(scope) | draft or scheduled | Event→cancelled | required | Class B |
+| `event.postpone` | OrgAdmin, Coach(scope) | predecessor draft or scheduled; successor schedule valid | draft successor + predecessor cancel | required | Class A |
+| `recurring_series.create` | OrgAdmin, Coach(scope) | active TeamSeason; valid weekly rule | series | required | Class A |
+| `recurring_series.update` | OrgAdmin, Coach(scope) | series active | series revision + draft occurrence reconciliation | required | Class B |
+| `recurring_series.end` | OrgAdmin, Coach(scope) | series active | series→ended | required | Class B |
+| `recurring_series.expand` | service | persisted active series | missing draft occurrences (+ Practice rows for practice series) | no separate human audit; service correlation recorded | Class A per occurrence identity |
+| `practice.create` | OrgAdmin, Coach(scope) | active TeamSeason | draft practice Event + 1:1 Practice | required | Class A |
+| `practice_activity.create` | OrgAdmin, Coach(scope) | Practice Event draft/scheduled; unique sequence | activity planned | required | Class A |
+| `practice_activity.update` | OrgAdmin, Coach(scope) | activity planned/modified; parent Event draft/scheduled | editable activity fields | required | Class B |
+| `practice_activity.transition` | OrgAdmin, Coach(scope) | legal activity transition; parent not cancelled | activity status | required | Class B |
+| `practice_activity.replace` | OrgAdmin, Coach(scope) | source planned/modified | successor activity + source→replaced | required | Class A |
+| `practice_template.create` | OrgAdmin, Coach(same org) | — | active template | required | Class A |
+| `practice_template.update` | OrgAdmin, Coach(same org) | template active | name/default duration | required | Class B |
+| `practice_template.archive` | OrgAdmin, Coach(same org) | template active | template→archived | required | Class B |
+| `event_expectation.supersede` | OrgAdmin, Coach(scope) | Event non-draft; one current expectation | old non-current + replacement | required | Class A replacement |
+| `event_adjustment.append` | OrgAdmin, Coach(scope) | Event non-draft | adjustment row | required | Class A |
+| `availability.respond` | Player self | Event scheduled; current expected expectation; Event not started | response row | success audit not required; denied/failed audit | Class A |
+| `availability.correct` | Coach(scope) | Event scheduled/in_progress/completed; target member belongs to Event org | correction response row | required | Class A |
+| `attendance.record` | OrgAdmin, Coach(scope) | Event in_progress/completed; target member valid; absent requires expected | current attendance row | required | Class A |
+| `attendance.correct` | OrgAdmin, Coach(scope) | one current AttendanceRecord | old non-current + replacement | required | Class A replacement |
+| `event.materialize_expectations` | service only | enclosing draft→scheduled transition | batch + expectation rows | no separate audit; enclosing event.transition audit | internal resumable workflow |
+
+### Event postponement ordering
+
+Base44 `event.postpone` uses:
+
+1. create/replay the successor as a **draft** Event with `supersedes_event_id` and full new schedule intent;
+2. CAS predecessor pending postpone metadata to reference the logical request;
+3. write AuditLog;
+4. cancel predecessor **last**;
+5. clear predecessor pending metadata and stable-verify one successor.
+
+A stray draft successor does not grant Player visibility. R30 detects orphan/incomplete postponement intent.
+
 # 4. Event scheduling / materialization algorithm
+
+## 4.0 Base44-only EventMaterializationBatch
+
+Base44 v1 adds one implementation-only recovery entity that is **not** a canonical product-domain object:
+
+**EventMaterializationBatch** — backend/internal-only, RestrictedStudent, immutable.
+
+Fields:
+
+- `event_materialization_batch_uuid`
+- `event_id`
+- `materialization_request_id`
+- `material_hash`
+- `expected_count`
+- `snapshot_items` — structured array of exact `{membership_id, roster_assignment_id}` pairs sorted by membership_id then roster_assignment_id
+- `created_at`, provenance, `correlation_id`
+- `creation_request_id`
+
+Rules:
+
+- exactly one batch per materialization_request_id;
+- direct client CRUD/read is denied for every role;
+- snapshot_items is validated structured data, not free text;
+- the batch is created as one durable record before any expectation row is emitted;
+- the batch is never projection/provenance/authorization input outside the materialization workflow itself;
+- canonical domain semantics remain the Event + Expectation model; this entity exists only because Base44 lacks the Reference Profile multi-row transaction.
 
 ## 4.1 Authoritative participant source
 
@@ -470,11 +539,12 @@ The ratified fail-toward-less-visibility sequence is:
 1. validate Event still `draft` and CAS version;
 2. derive the qualifying roster snapshot;
 3. compute server material hash over sorted immutable `(membership_id, roster_assignment_id)` pairs plus Event id;
-4. set Event recovery metadata `pending_operation=materialize_expectations`, request id and material hash while leaving Event `draft`;
-5. create/replay one expectation row per snapshot member using the same materialization request id;
-6. stable-read verify the exact expected count and identities for that request;
-7. write the operational audit for `event.transition`;
-8. transition Event to `scheduled`, set accepted `scheduled_materialization_request_id/hash`, clear pending metadata **last**.
+4. create/replay one immutable EventMaterializationBatch containing the full snapshot as one record;
+5. set Event recovery metadata `pending_operation=materialize_expectations`, request id, batch id and material hash while leaving Event `draft`;
+6. create/replay one expectation row per batch snapshot item using the same materialization request id;
+7. stable-read verify the exact batch count and identities for that request;
+8. write the operational audit for `event.transition`;
+9. transition Event to `scheduled`, set accepted request/hash/count/batch id, clear pending metadata **last**.
 
 ### Safe partial state
 
@@ -486,10 +556,11 @@ A scheduled Event with incomplete accepted expectations is never intentionally p
 
 ## 4.3 Replay / changed roster
 
-- same request id + same snapshot hash resumes/replays;
-- same request id + different snapshot hash conflicts;
+- same request id replays from the persisted EventMaterializationBatch and never re-derives the snapshot from current roster state;
+- same request id with caller material that would imply a different hash conflicts;
+- R18 may deterministically create missing expectation rows from the persisted immutable batch;
 - a different request id may begin only after operator disposition of an incomplete prior materialization finding;
-- roster changes after successful scheduling do not regenerate expectations.
+- roster changes after batch creation or successful scheduling never alter that batch and never regenerate expectations.
 
 ---
 
@@ -774,6 +845,30 @@ Every Equipment write is audit-required.
 
 ---
 
+# 7.1 Exact Layer 2B operation matrix
+
+| Operation | Actor | Preconditions | Writes | Audit | Idempotency |
+|---|---|---|---|---|---|
+| `equipment_asset_type.create` | OrgAdmin | — | active AssetType | required | Class A |
+| `equipment_asset_type.update` | OrgAdmin | AssetType active | display name | required | Class B |
+| `equipment_asset_type.archive` | OrgAdmin | AssetType active | type→archived | required | Class B |
+| `equipment_asset.create` | OrgAdmin | active AssetType; unique org asset_tag | Asset available | required | Class A |
+| `equipment_asset.update_identity` | OrgAdmin | Asset not retired | display name / serial only | required | Class B |
+| `equipment_asset.administrative_status` | OrgAdmin | no active/pending Assignment; legal transition | Asset status | required | Class B |
+| `equipment_allocation.create` | OrgAdmin | Asset not retired; no active Allocation; target same org | active Allocation | required | Class A |
+| `equipment_allocation.transition` | OrgAdmin | active Allocation; no active/pending Assignment when deactivating | active→inactive | required | Class B |
+| `equipment_assignment.assign` | OrgAdmin, Coach(allocation scope) | Asset available; active Allocation; no active/pending Assignment; destination valid | pending Assignment→active + Asset assigned | required | Class A |
+| `equipment_assignment.correct` | OrgAdmin; Coach while tenure active/in scope | one current row; asset/assignee immutable | superseding corrected row | required | Class A replacement |
+| `equipment_condition.record` | OrgAdmin, Coach(allocation scope) | Asset exists; context refs valid | current ConditionAssessment | required | Class A |
+| `equipment_condition.correct` | OrgAdmin, Coach(allocation scope) | one current assessment | superseding assessment | required | Class A replacement |
+| `equipment_issue.report` | Player window, Coach(allocation scope), OrgAdmin | Section 8 predicate for Player; Asset/tenure valid | current IssueReport | required | Class A |
+| `equipment_issue.correct` | OrgAdmin; Coach(allocation scope); never Player after create | one current issue | superseding issue | required | Class A replacement |
+| `equipment_service.record` | OrgAdmin | Asset exists | current ServiceRecord | required | Class A |
+| `equipment_service.correct` | OrgAdmin | one current ServiceRecord | superseding ServiceRecord | required | Class A replacement |
+| `equipment.return` | OrgAdmin, Coach(allocation scope) | current active Assignment | ConditionAssessment + Asset disposition + Assignment close | required | Class A workflow |
+| `equipment.administrative_closure` | OrgAdmin, Coach(allocation scope) | current active Assignment; explicit legal resulting status | Asset disposition + Assignment close | required | Class A workflow |
+| `equipment.transfer` | OrgAdmin, Coach(allocation scope) | current active source; destination valid in same allocation containment | pending destination + source close + destination activation | required | Class A workflow |
+
 # 8. Player EquipmentIssueReport authorization window
 
 A Player may create `equipment_issue.report` only when all are true:
@@ -942,8 +1037,8 @@ Detect:
 - Event pending_operation=materialize_expectations past settling window; or
 - Event scheduled with accepted materialization metadata but request-tagged current expectation set does not match accepted count/identity hash.
 
-**Repair:** No.  
-**Review:** Always. Snapshot authority may have changed; never regenerate from today's roster.  
+**Repair:** Yes, but only from the immutable EventMaterializationBatch already bound to the pending/accepted request. Missing expectation rows may be created from that batch; reconciliation never re-derives membership from today's roster. If the batch itself is missing/ambiguous or the Event hash disagrees, no repair occurs.  
+**Review:** report every deterministic repair; missing/ambiguous batch always operator review.  
 **Cadence:** every 5 minutes.  
 **Sensitivity:** RestrictedStudent.
 
@@ -1117,6 +1212,26 @@ Same-Organization authority over all Layer 2A and Layer 2B resources, subject to
 Asset.status remains operation-controlled, never generic.
 
 ---
+
+# 13.1 Exact Layer 2 read matrix
+
+| Resource | Player | Coach | OrgAdmin |
+|---|---|---|---|
+| Event / Practice | `viewer_has_expectation` | CoachScope through Event TeamSeason | same Organization |
+| PracticeActivity | only through readable Practice | CoachScope through Event TeamSeason | same Organization |
+| PracticeActivityTemplate | active template in viewer Organization | same Organization | same Organization |
+| EventParticipationExpectation / Adjustment | self | CoachScope through Event | same Organization |
+| AvailabilityResponse | self | CoachScope through Event | same Organization |
+| AttendanceRecord | self | CoachScope through Event | same Organization |
+| EquipmentAssetType | same Organization | same Organization | same Organization |
+| EquipmentAsset | currently assigned-to-self | active Allocation contained by CoachScope | same Organization |
+| EquipmentAssetAllocation | none | active Allocation contained by CoachScope | same Organization |
+| EquipmentAssignment | self as membership assignee | Allocation contained by CoachScope | same Organization |
+| EquipmentConditionAssessment | self when linked to own assignment tenure | Allocation contained by CoachScope | same Organization |
+| EquipmentIssueReport | self as reporter / own tenure | Allocation contained by CoachScope | same Organization |
+| EquipmentServiceRecord | none | Allocation contained by CoachScope | same Organization |
+| EquipmentProjection | self only | none | none |
+| EventMaterializationBatch | none | none | none |
 
 # 14. Resolver additions
 
