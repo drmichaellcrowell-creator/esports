@@ -304,3 +304,84 @@ Verified:
 - Base44 runtime commit: `560f779461cb8b1bafa82b741be5bc13eb6eaf0e`
 
 Layer 2.1 is formally closed. Next slice: **Layer 2.2 — Candidate policy + read/write preflight**.
+
+
+## Layer 2.2 — Candidate policy + read/write preflight
+
+**State:** STAGED — read-only policy preflight pending
+
+### Pre-slice checkpoint
+
+- checkpoint: `6abac0890bcb077250f4e71d`
+- Base44 runtime commit: `560f779461cb8b1bafa82b741be5bc13eb6eaf0e`
+
+### Candidate staged
+
+Candidate version:
+
+- `2a-layer2-foundation-ratified`
+
+Production policy artifact now contains:
+
+- every frozen `1g-layer1-read-ratified` rule unchanged;
+- exactly 117 Layer 2 candidate additions;
+- no Communication, Conduct, SharedCompetition, or Game-scope grant;
+- no service-only human policy rows for `event.materialize_expectations` or `recurring_series.expand`.
+
+Registry now contains a frozen `2a-layer2-foundation-ratified` entry defined as:
+
+- frozen 1g rules
+- plus exact Layer 2 candidate additions
+
+Persisted runtime state remains unchanged:
+
+- persisted `2a` AuthorizationPolicyVersion rows = 0
+- sole active policy = `1g-layer1-read-ratified`
+- active hash = `f4624985e292b9c0b53f3f4bea7d8ea92328de90cb3ec6b636098aea48bc3cf4`
+
+### Action-name correction caught before preflight
+
+Two candidate actions were corrected before the candidate hash is accepted:
+
+- `availability.respond` → policy action `respond` (not generic `create`)
+- `equipment_issue.report` → policy action `report` (not generic `create`)
+
+This aligns policy action identity with the canonical operation keys.
+
+### Read-only preflight staged
+
+Verifier:
+
+`layer2_policy_preflight`
+
+It independently reconstructs the expected Amendment 005 grant keys and verifies:
+
+- policy key exact;
+- candidate version exact;
+- registry knows candidate;
+- candidate hash == registry hash;
+- candidate rules == registry rules;
+- frozen 1g preserved exactly;
+- no duplicate policy keys;
+- candidate delta exactly matches independently reconstructed expected Layer 2 matrix;
+- candidate delta count exact;
+- candidate version not yet persisted;
+- active policy still frozen 1g/hash;
+- no Player raw EquipmentAssetAllocation read;
+- no Player EquipmentServiceRecord read;
+- no Coach EquipmentAssetAllocation mutation;
+- Player Event read uses `viewer_has_expectation`;
+- Player Availability uses `respond` + self;
+- EquipmentProjection is Player self-only;
+- Player issue reporting uses exact issue-window predicate;
+- Coach Event reads use CoachScope;
+- Coach Equipment uses Allocation containment;
+- no Game-scope rules;
+- no excluded-domain resources.
+
+### Staged checkpoint
+
+- checkpoint: `6abac1e2292863d2bc125ca1`
+- Base44 runtime commit: `bc6ab33a34ff27588bc5a7c3848bb5e66fc4b409`
+
+Layer 2.2 is not accepted and `2a` must not be activated until the read-only preflight returns all-pass.
