@@ -4,7 +4,7 @@
 
 No contradictions were found between frozen sources during compilation that the Final Verification Gate had not already resolved. One implicit composition (Section 7, AuditLog+Outbox combined transaction) was made explicit per the Final Verification Gate's own closing invariant.
 
-**Incorporated amendments.** [Amendment 001 — Bootstrap Authority](amendments/001-bootstrap-authority.md), [Amendment 002 — Membership Lifecycle](amendments/002-membership-lifecycle.md), and [Amendment 003 — Layer 1 Team/Roster Architecture Closure](amendments/003-layer1-team-roster-closure.md) are incorporated into this document and are in force. Amendment 001 closes Layer 0 genesis and resolves Membership mutability; Amendment 002 ratifies the ordinary Membership lifecycle and its concurrency requirements; Amendment 003 closes Layer 1 Team/Roster field, lifecycle, operation, authorization, projection, idempotency, and recovery guarantees. Amendment documents record rationale and the decision trail; **this contract remains the sole implementation source of truth**, and where an amendment document and this contract differ, this contract wins.
+**Incorporated amendments.** [Amendment 001 — Bootstrap Authority](amendments/001-bootstrap-authority.md), [Amendment 002 — Membership Lifecycle](amendments/002-membership-lifecycle.md), [Amendment 003 — Layer 1 Team/Roster Architecture Closure](amendments/003-layer1-team-roster-closure.md), and [Amendment 004 — Layer 1 TeamSeason Completion Ordering Ratification](amendments/004-layer1-completion-ordering-ratification.md) are ratified and in force on `main`. [Amendment 005 — Layer 2 Events/Attendance + Equipment Architecture Closure](amendments/005-layer2-events-equipment-closure.md) is incorporated into this architecture branch for consistency review but remains pending ratification until its architecture PR merges. Amendment 001 closes Layer 0 genesis and resolves Membership mutability; Amendment 002 ratifies the ordinary Membership lifecycle and its concurrency requirements; Amendment 003 closes Layer 1 Team/Roster field, lifecycle, operation, authorization, projection, idempotency, and recovery guarantees; Amendment 004 ratifies the Base44-only fail-toward-less-authority TeamSeason completion ordering without changing canonical domain semantics; Amendment 005 proposes the complete Layer 2 Events/Practice/Attendance/Availability and Equipment field, lifecycle, operation, authorization, projection, idempotency, and dependency closure. **Until Amendment 005 is ratified and merged, the current `main` contract remains the active implementation authority for production work.** Amendment documents record rationale and the decision trail; after ratification, **this contract remains the sole implementation source of truth**, and where an amendment document and this contract differ, this contract wins.
 
 ---
 
@@ -172,6 +172,43 @@ Provider-specific concurrency/recovery fields are implementation-profile concern
 | EquipmentServiceRecord | AO+S (correction) | **SO** | coach(scope), OrgAdmin R / OrgAdmin W | Asset-only, no Player-attributed field, never a conduct field |
 | EquipmentProjection | derived | RS | self R | see Section 8 |
 
+#### Layer 2 field closure (Amendment 005)
+
+Layer 2 is exactly two parallel tracks: **Layer 2A — Events / Practice / Attendance / Availability** and **Layer 2B — Equipment**. Both depend only on frozen Layer 0 + Layer 1. Every persistent Layer 2 object uses application-generated UUIDs, application-owned timestamps/provenance, execution `correlation_id`, immutable logical-request identity for Class-A creation/replacement operations, and application compare-and-set versioning where the mutability model requires it.
+
+##### Layer 2A — canonical persistent fields and scope
+
+- **Event** — `event_uuid`; immutable `team_season_id`; `event_type = practice|competition|meeting|other_operational`; bounded `event_display_name` (120); UTC `scheduled_start_at` / `scheduled_end_at`; required IANA `time_zone`; optional bounded `location_label` (160); `status = draft|scheduled|in_progress|completed|cancelled`; optional immutable `recurring_event_series_id`; optional immutable `series_occurrence_local_start` and `series_revision` for generated occurrences; optional `supersedes_event_id` for postponement; timestamps/provenance/correlation; immutable `creation_request_id`; `version`. Event scope is always Event → TeamSeason → Team → Organization. No Organization-wide or Team-only Event scope exists in Layer 2 v1.
+- **RecurringEventSeries** — `recurring_event_series_uuid`; immutable `team_season_id`; `event_type`; bounded `series_display_name`; IANA `time_zone`; local start/end dates; local start time; positive `duration_minutes`; `recurrence_frequency = weekly`; `interval_weeks = 1..12`; non-empty closed `days_of_week`; optional bounded `location_label`; `status = active|ended`; positive `revision`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`. Occurrence identity is unique by `(recurring_event_series_id, series_occurrence_local_start)`.
+- **EventParticipationExpectation** — `event_participation_expectation_uuid`; immutable `event_id`, `membership_id`; optional immutable `roster_assignment_id` (required for roster materialization, nullable for authorized manual correction); `expectation_state = expected|not_expected`; `source_type = roster_materialization|manual_correction`; optional `materialization_request_id`; `supersedes_id`; `is_current`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`. At most one current row per `(event_id,membership_id)`.
+- **EventParticipationAdjustment** — `event_participation_adjustment_uuid`; immutable `event_id`, `membership_id`; `adjustment_type = excused_absence|excused_late_arrival|excused_early_departure`; `effective_at`; server-assigned monotonic `sequence_number` within `(event_id,membership_id)`; timestamps/provenance/correlation; immutable `creation_request_id`.
+- **AvailabilityResponse** — append-only: `availability_response_uuid`; immutable `event_id`, `membership_id`; `response_value = available|unavailable|unsure`; `response_source = self|coach_correction`; optional `corrects_response_id`; `responded_at`; timestamps/provenance/correlation; immutable `creation_request_id`. “Update own AvailabilityResponse” means append a newer row; no existing row is mutated or superseded. Current response is derived by `responded_at`, then `created_at`, then UUID tie-break. No-Response is row absence.
+- **AttendanceRecord** — `attendance_record_uuid`; immutable `event_id`, `membership_id`; `attendance_state = present|absent|late|partial`; `recorded_at`; `supersedes_id`; `is_current`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`. At most one current row per `(event_id,membership_id)`. `absent` requires a current `expected` expectation.
+- **Practice** — `practice_uuid`; immutable unique `event_id`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`. The referenced Event must have `event_type=practice`. Practice has no `team_season_id`; scope resolves Practice → Event → TeamSeason.
+- **PracticeActivityTemplate** — `practice_activity_template_uuid`; immutable `organization_id`; bounded `template_display_name`; optional `default_duration_minutes`; `status = active|archived`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`. Archived is terminal for new use but does not invalidate historical references.
+- **PracticeActivity** — `practice_activity_uuid`; immutable `practice_id`; optional immutable `template_id`; bounded `activity_display_name`; positive `sequence_index`; optional `planned_duration_minutes`; `status = planned|completed|modified|replaced|skipped`; optional `replacement_activity_id`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`. Legal transitions are `planned→completed|modified|replaced|skipped`, `modified→completed|replaced|skipped`; completed/replaced/skipped are terminal.
+
+Event/participation facts remain distinct: expectation is who was expected, availability is a person's response, adjustment is an authorized operational exception, and attendance is the observed outcome. No one fact rewrites or implies another.
+
+A Player's Event/Practice read predicate is **`viewer_has_expectation`**: active Membership in the Event Organization + exactly one current `expected` EventParticipationExpectation for the viewer + Event not `draft` + unambiguous same-Organization scope. Any missing/duplicate/ambiguous predicate component denies.
+
+Roster materialization for `draft→scheduled` snapshots exactly those active Memberships whose unique non-terminal RosterAssignment in the Event TeamSeason is `active|reserve`. Player RoleAssignment is not required. The snapshot is historical: later roster, Membership, or role changes do not regenerate it.
+
+##### Layer 2B — canonical persistent fields and scope
+
+- **EquipmentAssetType** — `equipment_asset_type_uuid`; immutable `organization_id`; bounded `type_display_name`; `status = active|archived`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`.
+- **EquipmentAsset** — `equipment_asset_uuid`; immutable `organization_id`, immutable `asset_type_id`; required bounded `asset_tag`, unique within Organization; bounded `asset_display_name`; optional bounded `serial_number`; `status = available|assigned|maintenance|missing|retired`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`. `current_location` is never persisted. Generic Asset update may never write status.
+- **EquipmentAssetAllocation** — `equipment_asset_allocation_uuid`; immutable `organization_id`, `asset_id`; `allocation_scope_type = organization|team|team_season`; nullable `allocation_scope_reference_id` (null only for Organization scope); `status = active|inactive`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`. At most one active Allocation per Asset. Game allocation is not admitted in Layer 2 v1.
+- **EquipmentAssignment** — correction-chain row identity `equipment_assignment_uuid` plus stable `assignment_tenure_id`; immutable `asset_id`; `assignee_type = membership|team|team_season`; immutable `assignee_reference_id`; `purpose_code = individual_use|team_use|practice|competition|other_operational`; `assigned_at`; optional `due_at`; `standing = pending|active|closed`; nullable `closure_reason = returned|administrative|transferred`; optional `closed_at`; `supersedes_id`; `is_current`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`. Exactly one current row per tenure; at most one current **active** assignment across all tenures for an Asset. Pending is non-effective and grants no Player possession/read semantics.
+- **EquipmentConditionAssessment** — `equipment_condition_assessment_uuid`; immutable `asset_id`; optional immutable `assignment_tenure_id`; `assessment_context = checkout|return|inspection|service`; `condition_state = good|worn|damaged|needs_service`; optional bounded `location_reference`; `assessed_at`; `supersedes_id`; `is_current`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`.
+- **EquipmentIssueReport** — `equipment_issue_report_uuid`; immutable `asset_id`, `assignment_tenure_id`, `reporter_membership_id`; `issue_type = damage|malfunction|missing_component|other_operational`; `issue_status = open|resolved`; `reported_at`; `supersedes_id`; `is_current`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`. No narrative field exists.
+- **EquipmentServiceRecord** — `equipment_service_record_uuid`; immutable `asset_id`; `service_type = inspection|maintenance|repair|retirement_review`; `service_outcome = completed|follow_up_required|asset_retired`; `serviced_at`; `supersedes_id`; `is_current`; timestamps/provenance/correlation; immutable `creation_request_id`; `version`. No Membership/Player/assignee reference is permitted.
+
+Equipment allocation containment is exact: OrganizationWide contains all allocations in the Organization; Team contains that Team and child TeamSeason allocations; TeamSeason contains that exact TeamSeason allocation; Game never matches in Layer 2 v1. Missing, duplicate-active, cross-Organization, or unresolvable Allocation denies.
+
+EquipmentAsset lifecycle is `available→assigned` on successful assignment activation; `assigned→available|maintenance|missing|retired` through return/administrative closure; transfer preserves `assigned`; `maintenance→available|retired` and `missing→available|maintenance|retired` are OrgAdmin administrative transitions; `retired` is terminal. Condition `good|worn` returns to available; `damaged|needs_service` returns to maintenance. None of damaged/missing/overdue implies blame or Conduct.
+
+
 ### Communication
 
 | Entity | Mut. | Sens. | Client R / W | Notes |
@@ -241,6 +278,30 @@ For Team/Roster resources, Coach scope is evaluated centrally and additively:
 - `Game` remains a valid canonical scope type but is not assignable in Layer 1; no Game entity/catalog exists yet, and OrganizationGameOffering is not substituted for Game.
 
 For OrganizationGameOffering read, OrganizationWide scope matches all Offerings in the Organization; Team/TeamSeason scope matches the Offering whose `game_id` equals the scoped Team's `game_id`. Missing/orphaned scope targets, duplicate-current scope ambiguity, cross-Organization references, or no containment match deny.
+
+#### Layer 2 read/scope containment (Amendment 005)
+
+| Resource | Player | Coach | Organization Administrator |
+|---|---|---|---|
+| Event / Practice | `viewer_has_expectation` | CoachScope through Event TeamSeason | same Organization |
+| PracticeActivity | only through readable Practice | CoachScope through Event TeamSeason | same Organization |
+| PracticeActivityTemplate | active template in viewer Organization | same Organization | same Organization |
+| EventParticipationExpectation / Adjustment | self | CoachScope through Event | same Organization |
+| AvailabilityResponse | self | CoachScope through Event | same Organization |
+| AttendanceRecord | self | CoachScope through Event | same Organization |
+| EquipmentAssetType | same Organization | same Organization | same Organization |
+| EquipmentAsset | currently assigned-to-self | active Allocation contained by CoachScope | same Organization |
+| EquipmentAssetAllocation | none | active Allocation contained by CoachScope | same Organization |
+| EquipmentAssignment | self as Membership assignee | Allocation contained by CoachScope | same Organization |
+| EquipmentConditionAssessment | self when linked to own assignment tenure | Allocation contained by CoachScope | same Organization |
+| EquipmentIssueReport | self as reporter / own tenure | Allocation contained by CoachScope | same Organization |
+| EquipmentServiceRecord | none | Allocation contained by CoachScope | same Organization |
+| EquipmentProjection | self only | none | none |
+
+Additional fail-closed predicates are `viewer_has_expectation`, `equipment_allocation_scope_match`, `equipment_self_assignment_match`, and `equipment_issue_report_window_match`. They extend the centralized resolver; they are not independent authorization engines. Unknown predicate state denies.
+
+A Player may create EquipmentIssueReport only while the current Assignment is to that Membership and either standing=`active` or the exact return workflow for that Assignment is in its bounded, persisted in-progress window. After Assignment closure the Player retains own historical read but no create/correct authority.
+
 
 ### Organization Administrator
 | Operation/Entity | Scope/Context | Notes |
@@ -372,6 +433,66 @@ Class-B state-setting operations `team.update`, `team.archive`, `team_season.tra
 
 ---
 
+### 4.3 Layer 2 operation closure (Amendment 005)
+
+Every write below is a named controlled operation; generic client CRUD is prohibited.
+
+#### Events / Practice / Attendance
+
+| Operation | Actor | Preconditions | Result | Audit |
+|---|---|---|---|---|
+| `event.create` | OrgAdmin, Coach(scope) | active TeamSeason in scope; non-Practice type | draft Event | Required |
+| `event.update` | OrgAdmin, Coach(scope) | Event draft | editable schedule/display/location fields | Required |
+| `event.transition` | OrgAdmin, Coach(scope) forward only | legal transition; draft→scheduled owns expectation materialization | Event status | Required |
+| `event.cancel` | OrgAdmin, Coach(scope) | draft or scheduled | Event→cancelled | Required |
+| `event.postpone` | OrgAdmin, Coach(scope) | predecessor draft/scheduled; successor schedule valid | draft successor + predecessor cancel | Required |
+| `recurring_series.create` | OrgAdmin, Coach(scope) | active TeamSeason; valid weekly recurrence | active series | Required |
+| `recurring_series.update` | OrgAdmin, Coach(scope) | active series | series revision + draft occurrence changes only | Required |
+| `recurring_series.end` | OrgAdmin, Coach(scope) | active series | series→ended | Required |
+| `recurring_series.expand` | service | persisted active series | missing draft occurrences only | No separate human audit |
+| `practice.create` | OrgAdmin, Coach(scope) | active TeamSeason | draft practice Event + 1:1 Practice | Required |
+| `practice_activity.create` | OrgAdmin, Coach(scope) | parent Practice/Event valid | planned activity | Required |
+| `practice_activity.update` | OrgAdmin, Coach(scope) | activity planned/modified; parent draft/scheduled | editable activity fields | Required |
+| `practice_activity.transition` | OrgAdmin, Coach(scope) | legal transition | activity status | Required |
+| `practice_activity.replace` | OrgAdmin, Coach(scope) | source planned/modified | successor + source→replaced | Required |
+| `practice_template.create` | OrgAdmin, Coach(same org) | — | active template | Required |
+| `practice_template.update` | OrgAdmin, Coach(same org) | active template | name/default duration | Required |
+| `practice_template.archive` | OrgAdmin, Coach(same org) | active template | template→archived | Required |
+| `event_expectation.supersede` | OrgAdmin, Coach(scope) | one current expectation; Event non-draft | old non-current + replacement | Required |
+| `event_adjustment.append` | OrgAdmin, Coach(scope) | Event non-draft | adjustment row | Required |
+| `availability.respond` | Player self | Event scheduled; current expected expectation; Event not started | append response | successful self-response not audit-required; denied/failed attempts are audited |
+| `availability.correct` | Coach(scope) | target belongs to Event Organization | correction response row | Required |
+| `attendance.record` | OrgAdmin, Coach(scope) | Event in_progress/completed; target valid | current attendance row | Required |
+| `attendance.correct` | OrgAdmin, Coach(scope) | one current AttendanceRecord | superseding attendance row | Required |
+| `event.materialize_expectations` | service only | enclosing draft→scheduled transition | immutable roster snapshot materialized into expectation set | no separate audit; enclosing event.transition audit |
+
+Class-A logical creation/replacement operations use immutable request identity and same-request/same-material replay; changed material under the same request conflicts. Class-B target-state/edit operations replay success only when the requested target/material state is already achieved.
+
+#### Equipment
+
+| Operation | Actor | Preconditions | Result | Audit |
+|---|---|---|---|---|
+| `equipment_asset_type.create` | OrgAdmin | — | active AssetType | Required |
+| `equipment_asset_type.update` | OrgAdmin | active type | display name | Required |
+| `equipment_asset_type.archive` | OrgAdmin | active type | type→archived | Required |
+| `equipment_asset.create` | OrgAdmin | active type; unique org asset_tag | available Asset | Required |
+| `equipment_asset.update_identity` | OrgAdmin | Asset not retired | display/serial only | Required |
+| `equipment_asset.administrative_status` | OrgAdmin | no active/pending Assignment; legal transition | Asset status | Required |
+| `equipment_allocation.create` | OrgAdmin | no active Allocation; target same org | active Allocation | Required |
+| `equipment_allocation.transition` | OrgAdmin | active Allocation; no active/pending Assignment to deactivate | active→inactive | Required |
+| `equipment_assignment.assign` | OrgAdmin, Coach(allocation scope) | Asset available; active Allocation; no active/pending Assignment; destination valid | pending→active Assignment + Asset assigned | Required |
+| `equipment_assignment.correct` | OrgAdmin; Coach while tenure active/in scope | one current row; immutable asset/assignee | superseding correction | Required |
+| `equipment_condition.record` / `equipment_condition.correct` | OrgAdmin, Coach(allocation scope) | valid Asset/context/current row | ConditionAssessment create/supersede | Required |
+| `equipment_issue.report` | Player window, Coach(allocation scope), OrgAdmin | valid Asset/tenure; Player must satisfy narrow window | IssueReport | Required |
+| `equipment_issue.correct` | OrgAdmin, Coach(allocation scope) | one current issue | superseding issue | Required |
+| `equipment_service.record` / `equipment_service.correct` | OrgAdmin | valid Asset/current row | ServiceRecord create/supersede | Required |
+| `equipment.return` | OrgAdmin, Coach(allocation scope) | current active Assignment | ConditionAssessment + Asset disposition + Assignment close | Required |
+| `equipment.administrative_closure` | OrgAdmin, Coach(allocation scope) | current active Assignment; explicit legal resulting status | Asset disposition + Assignment close | Required |
+| `equipment.transfer` | OrgAdmin, Coach(allocation scope) | current active source; destination valid in same allocation containment | pending destination + source close + destination activation | Required |
+
+Communication is excluded from Base44 v1, so none of these Layer 2 operations has a v1 Notification/Outbox side effect.
+
+
 ## 5. Lifecycle / State-Machine Catalog
 
 ### Match.status — the canonical, final lifecycle (no other transition exists)
@@ -388,6 +509,23 @@ pending | ready → cancelled  (controlled match.cancel, authority: lifecycle_ca
 
 ### Event.status (independent of Match.status)
 `draft → scheduled → in_progress → completed`, plus `cancelled` (from draft/scheduled only). Postponement = cancel + supersession (new Event row), never a status value.
+
+### RecurringEventSeries.status
+
+`active → ended` only. `ended` is terminal. Series edits affect only still-`draft` occurrences. Scheduled/in-progress/completed/cancelled occurrences are historical facts and are never rewritten by a series edit.
+
+### PracticeActivity.status
+
+`planned → completed|modified|replaced|skipped`; `modified → completed|replaced|skipped`. `completed|replaced|skipped` are terminal. `replaced` requires exactly one successor PracticeActivity in the same Practice.
+
+### EquipmentAsset.status
+
+`available → assigned` only through successful assignment activation. `assigned → available|maintenance|missing|retired` only through return/administrative closure. Transfer preserves `assigned`. `maintenance → available|retired` and `missing → available|maintenance|retired` require OrgAdmin administrative status operation. `retired` is terminal. Generic update never writes status.
+
+### EquipmentAssignment.standing
+
+`pending → active → closed`. Pending is non-effective and invisible to Player possession/projection rules. Closed is terminal for lifecycle standing; factual correction uses the AO+S correction chain for the same assignment tenure and never reopens a closed tenure.
+
 
 ### Membership.status
 `invited → active ⇄ inactive/removed` (**Temporal** — status itself is the current fact; no supersession, no `is_current` chain). Deactivation is a controlled-closure event, not merely a flag flip: it cascades to close dependent Role/Scope/Captain grants in the same transaction.
@@ -452,7 +590,7 @@ LAYER 1 — Team/Roster
   Team, TeamSeason, RosterAssignment, OrganizationGameOffering, RosterDisplayProjection
   (depends on Layer 0 only)
 
-LAYER 2 — parallel, both depend only on Layer 0+1
+LAYER 2 — parallel, both depend only on Layer 0+1; architecture closure = Amendment 005
   Events/Practice/Attendance/Availability         Equipment
   (Event, Practice, Expectation, Availability,     (AssetType, Asset, Allocation,
    Attendance)                                      Assignment, Condition, Issue, Service)
@@ -490,6 +628,11 @@ Every row below is one atomic transaction — partial commit is never acceptable
 | TeamSeason completion | TeamSeason `active → completed` + every non-terminal child RosterAssignment → `completed` + affected CaptainAssignment closures + AuditLog event(s) |
 | Captain grant/replacement | 4-way prerequisite validation + prior current CaptainAssignment supersession (if any) + replacement CaptainAssignment create + AuditLog event |
 | Event expectation materialization | Event status transition + full EventParticipationExpectation set + AuditLog event (if required) + OutboxEvent (if Notification required) |
+| Event postponement | draft successor Event create + predecessor cancellation + AuditLog event; successor remains draft and non-visible until independently scheduled |
+| Practice creation | draft practice Event + unique Practice row + AuditLog event |
+| Equipment assignment activation | pending Assignment create + AuditLog event + Asset.status→assigned + Assignment pending→active |
+| Equipment administrative closure | Asset disposition + Assignment close + AuditLog event |
+
 | `lineup.lock` | 4-way validation (roster/eligibility/restriction/ruleset) + MatchParticipantLineupLock create + AuditLog event; Match.status re-derivation is a read-time consequence, not a separate write |
 | `match.start` / `match.mark_complete` / `match.cancel` | Match.status transition + AuditLog event |
 | `match_schedule.supersede` | old MatchSchedule superseded + new MatchSchedule created + AuditLog event + OutboxEvent(s) (per-participant for SharedCompetition) — **all in one transaction, per Global Invariant 15** |
@@ -523,6 +666,20 @@ Every row below is one atomic transaction — partial commit is never acceptable
 | ActionCenterProjection | ActionItem, Notification | self, coach(scope, exceptions) | prioritized (hard_blocker/due_soon/overdue/informational) items with live-derived due dates and deep-links | — | **No** |
 | SharedAuditEventProjection | AuditLogEvent(narrowed) | participant OrgAdmin | timestamp, shared action type, shared resource ref, outcome, acting participant Org | actor_user_id, actor_membership_id, private related-resource refs, private reason/detail, private changed-field metadata | **No** |
 | OutboxHealthProjection | OutboxEvent(aggregated, own-org/own-target rows only) | OrgAdmin | pending/failed/dead_letter counts, oldest_pending_age | raw payload, source references, event type breakdown | **No** |
+
+**EquipmentProjection exact DTO (Amendment 005).** Self-only output fields are:
+
+- `assignment_reference` — opaque stable reference derived from assignment tenure;
+- `asset_reference` — opaque stable reference derived from Asset;
+- `asset_type_name`;
+- `asset_display_name`;
+- `purpose_code`;
+- `due_at`;
+- `action_needed = none|return_due_soon|return_overdue|issue_open|contact_coach`;
+- `reported_issues[]` with `issue_reference`, `issue_type`, `issue_status`, `reported_at`.
+
+It never exposes raw Membership/Asset/Assignment UUIDs, service records, location references, serial number, another Player's assignment, or blame framing. Projection includes current active viewer assignments plus closed viewer tenures only while a current own issue remains open. `action_needed` precedence is: open issue → overdue → due within 72 hours → staff disposition required → none. Clock comparison uses UTC.
+
 
 **No projection listed above, or anywhere else in the frozen architecture, may ever be used as `source_reference`/provenance for a Notification, AuditLog event, OutboxEvent, or any authorization decision.** Every one is a read-only derived surface.
 
@@ -600,6 +757,25 @@ Run at the end of every implementation phase before declaring it complete:
 - [ ] **Platform authority containment**: confirm Platform-scoped AuditLog events (`organization_id IS NULL`) are unreadable by every OrgAdmin; confirm Platform authority holds no Membership, no RoleAssignment, and no read path into any Organization's `RestrictedStudent`/`HighlyRestricted` content, AuditLog, or Outbox after provisioning commits.
 
 ---
+
+### Layer 2 verification additions (Amendment 005)
+
+Before Layer 2 may freeze:
+
+- every Layer 2 governed entity denies direct client CRUD;
+- Event/Practice Player reads prove `viewer_has_expectation` and deny draft/ambiguous expectation state;
+- Coach Event authority proves Event→TeamSeason CoachScope containment;
+- expectation materialization proves immutable scheduling snapshot, exact once-only expectation set, replay safety, and no regeneration after roster change;
+- Availability append-history semantics, Attendance correction, and expectation/availability/adjustment/attendance separation are tested;
+- Practice/Event 1:1 and PracticeActivity transition/replacement invariants are tested;
+- Equipment allocation containment denies missing/duplicate/cross-org scope;
+- Equipment assignment proves pending is inert, at most one active assignment exists, and Asset.status cannot be generically mutated;
+- return/admin-closure/transfer prove fail-toward-less-access ordering and deterministic status disposition;
+- EquipmentProjection exact-field/no-leak tests pass;
+- Layer 2-specific Base44 reconciliation defined in the active profile is live and clean;
+- the full frozen Layer 1 regression suite remains green;
+- no real student data is used before institutional approval.
+
 
 ## 12. Traceability Appendix (provenance only — not required to interpret this contract)
 

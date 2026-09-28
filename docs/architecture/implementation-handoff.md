@@ -2,7 +2,7 @@
 
 ## 1. What is authoritative
 
-**`implementation-contract.md`** is the sole source of truth for implementation. It contains the complete, corrected architecture, including incorporated Amendments 001–003. Amendment 003 closes Layer 1 Team/Roster architecture but does not itself authorize runtime implementation; implementation begins only from a work order pinned to the post-amendment `main` SHA.
+**`implementation-contract.md`** is the sole source of truth for implementation. On current `main`, Amendments 001–004 are ratified and in force. On this architecture branch, Amendment 005 is incorporated across the contract/profile/handoff for consistency review but remains pending ratification until its architecture PR merges. Amendment 003 closes Layer 1 Team/Roster architecture; Amendment 004 ratifies the Base44 TeamSeason completion ordering; Amendment 005 proposes the complete Layer 2 Events/Practice/Attendance/Availability + Equipment closure. **Do not implement Layer 2 from this review branch.** Runtime implementation begins only from a work order pinned to the post-amendment `main` SHA after ratification/merge.
 
 ### 1.1 The active v1 substrate profile
 
@@ -28,6 +28,7 @@ Do not invent, assume, or fill any of the following if the contract is silent on
 - Retry counts, lease timeouts, or other Outbox/operational tuning parameters — these are deliberately left as implementation-time operational decisions, not architectural ones, but must not be chosen in a way that violates the at-least-once/idempotency guarantees in Contract Section 1.
 - A Platform Administrator break-glass mechanism — this is a named, deliberate future dependency, not something to build ambiently in Phase 0/1.
 - Any Layer 1 Team/Roster field, lifecycle, operation, scope-containment, idempotency, captain-uniqueness, roster-projection, or reconciliation rule already resolved by Amendment 003. In particular, do not re-infer a Player-role prerequisite for roster participation, a Game-scope target, multiple current captains, or different roster-move/cascade semantics.
+- Any Layer 2 Event/Practice/Attendance/Availability or Equipment field, enum, lifecycle, operation key, scope-containment predicate, idempotency/recovery rule, projection field, or reconciliation disposition already resolved by Amendment 005. In particular, do not re-infer Organization-wide Events, Game-scope matching, roster regeneration after scheduling, mutable Availability history, a different Player equipment issue window, a generic EquipmentAsset.status write, two effective EquipmentAssignments, or a different R18–R30 repair posture.
 
 **Provisioning authority is not break-glass — do not conflate them.** Amendment 001 defines a narrow, genesis-only Platform provisioning authority (`policy.bootstrap`, `organization.provision`). The distinction is exact:
 
@@ -45,7 +46,7 @@ Follow Contract Section 6 exactly. In sequence, not in parallel where a dependen
 0. **Bootstrap** (Amendment 001): `policy.bootstrap` installs the first active `AuthorizationPolicyVersion`, **then** `organization.provision` performs tenant genesis. This order is mandatory — no protected operation may execute before a resolvable, hash-verified active policy version exists, and `organization.provision` is itself a protected operation. `policy.bootstrap` is the only operation in the architecture that runs outside the authorization resolver, and it is self-extinguishing.
 1. **Foundation**: Organization, Membership, RoleAssignment, CoachScopeAssignment, CaptainAssignment, the centralized authorization resolver, AuditLogEvent, OutboxEvent. The Membership lifecycle operations (`membership.invite`, `membership.activate`, `membership.deactivate` — Amendment 002) are part of this layer.
 2. **Team/Roster**: Team, TeamSeason, RosterAssignment, OrganizationGameOffering, RosterDisplayProjection. **Architecture closure is Amendment 003.** Implementation must use its exact entity fields, operation keys, lifecycle rules, CoachScope containment, captain semantics, idempotency classes, and Base44 recovery/reconciliation profile; do not invent alternatives.
-3. **Events/Practice/Attendance** and **Equipment** (may proceed in parallel — both depend only on 1+2).
+3. **Events/Practice/Attendance/Availability** and **Equipment** — canonical Layer 2, architecture closure is Amendment 005. They may proceed in parallel because both depend only on Foundation + Team/Roster. Implementation must use Amendment 005's exact fields, operation keys, Event→TeamSeason scope chain, `viewer_has_expectation`, allocation containment, immutable scheduling snapshot semantics, Equipment pending/inert standing, projection shape, and Base44 I18–I30 / R18–R30 profile; do not invent alternatives.
 4. **Competition/Match/Scoring/Results** (depends on 2 for Roster, 3 for OrganizationMatchEvent binding).
 5. **Eligibility/Accountability/Conduct/Restriction** and **Development/Goals/Skills** (may proceed in parallel — Eligibility is a hard dependency of Match's `lineup.lock` operation, so it must exist before that specific operation can be safely built, even if the rest of Match proceeds first).
 6. **Competitive Tier** (depends on 4 and 5).
@@ -64,3 +65,34 @@ If any checklist item fails and the fix would require changing something the con
 Amendment 003 is human-ratified architecture. It does **not** authorize direct implementation against the pre-amendment Layer 0 baseline. After the architecture-amendment PR merges, capture the new authoritative `main` SHA and write the Layer 1 implementation work order against that exact SHA and the then-current Base44 runtime.
 
 Layer 1 implementation may use synthetic data only until the institutional student-data gate is separately satisfied.
+
+## 7. Layer 2 post-Amendment-005 implementation boundary
+
+Amendment 005 is architecture closure, not direct runtime authorization.
+
+After the Amendment 005 architecture PR merges:
+
+1. capture the exact new authoritative `main` SHA;
+2. verify post-merge CI is green;
+3. create a fresh Layer 2 implementation branch from that exact SHA;
+4. write the Layer 2 runtime implementation work order against that SHA and the then-current Base44 runtime;
+5. keep all acceptance synthetic-only until the institutional student-data gate is separately satisfied.
+
+Layer 2 implementation is two independently gateable tracks:
+
+- **Layer 2A:** Events / Practice / Attendance / Availability
+- **Layer 2B:** Equipment
+
+They may be implemented in parallel only after the shared schema/resolver/policy substrate they depend on is in place.
+
+The following are hard implementation stops:
+
+- any required field/enum not present in the canonical contract;
+- any unnamed Layer 2 write path;
+- any need to change Layer 1 semantics;
+- any need to activate Game CoachScope matching;
+- any need for Communication/Notification/Outbox;
+- any need for Conduct;
+- any multi-record Base44 workflow that does not match the profile's ratified ordering/recovery;
+- any proposal to use real student data before institutional approval.
+

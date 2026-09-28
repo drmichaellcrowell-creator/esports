@@ -10,7 +10,7 @@
 Precedence, exactly:
 
 1. **`implementation-contract.md` remains the canonical, full-strength architecture.** This profile does not rewrite it, does not amend it, and does not make any of its statements false. The contract describes the target guarantees; this profile describes which of those guarantees the scoped Base44 v1 implements *differently*, and how the difference is contained.
-2. **Amendments 001–003 remain in force as incorporated into the canonical contract.** Amendment 001 bootstrap semantics, Amendment 002 Membership lifecycle semantics, and Amendment 003 Layer 1 Team/Roster semantics are unchanged; this profile records only Base44-specific enforcement/recovery differences.
+2. **Amendments 001–004 remain in force as incorporated into the canonical contract.** Amendment 005 Layer 2 Events/Attendance + Equipment closure is incorporated into this architecture branch for consistency review but remains pending ratification until its architecture PR merges. This profile records only Base44-specific enforcement/recovery differences; until Amendment 005 is ratified, its Layer 2 additions are proposed profile behavior, not an active production authorization.
 3. **Where this profile is silent, the canonical contract governs.** Silence is never permission. In particular, silence never converts a contract prohibition into an allowance.
 4. **This profile may narrow, never widen.** A deviation recorded below may reduce what v1 implements or change how a guarantee is enforced. No deviation grants an actor authority the contract does not grant, exposes data the contract does not expose, or relaxes a Section 10 prohibition.
 
@@ -270,9 +270,25 @@ Amendment 001's semantics are **unchanged**. Its enforcement mechanism deviates.
 | Platform authority exhausted at provisioning commit | **Held**, unchanged (Prohibition 19). |
 | No break-glass | **Held**, unchanged (Prohibition 15). Nothing in this profile creates one. |
 
-### 5.4 Application-enforced integrity invariants (I1–I17)
+### 5.4 Application-enforced integrity invariants (I1–I30)
 
-I1–I13 originate in Amendment 001's PostgreSQL integrity model; I14–I17 are added by Amendment 003 for Layer 1. **Base44 provides no database-enforced equivalent for these constraints.** They are application-enforced and reconciled in v1, which is a real reduction in assurance and a primary reason the Reference Profile is preserved.
+I1–I13 originate in Amendment 001's PostgreSQL integrity model; I14–I17 are added by Amendment 003 for Layer 1; I18–I30 are added by Amendment 005 for Layer 2. **Base44 provides no database-enforced equivalent for these constraints.** They are application-enforced and reconciled in v1, which is a real reduction in assurance and a primary reason the Reference Profile is preserved.
+
+Layer 2 invariants are:
+
+- **I18 — Event scope integrity:** Event TeamSeason exists and resolves unambiguously to one Organization.
+- **I19 — Event expectation currentness:** at most one current EventParticipationExpectation per `(event_id,membership_id)`.
+- **I20 — Event materialization closure:** a scheduled Event's accepted materialization request/hash/count/batch identifies the exact accepted expectation set.
+- **I21 — Practice/Event integrity:** exactly one Practice per Practice Event; Practice never references a non-Practice Event.
+- **I22 — Recurring occurrence uniqueness:** at most one occurrence identity per `(series_id, local_occurrence_start)`; draft occurrences reflect current series revision.
+- **I23 — Equipment active assignment uniqueness:** at most one current active EquipmentAssignment per Asset.
+- **I24 — Equipment allocation uniqueness:** at most one active EquipmentAssetAllocation per Asset.
+- **I25 — Equipment containment:** Allocation, Asset, Assignment and assignee resolve to the same Organization, and Coach use is allocation-contained.
+- **I26 — Equipment current-chain uniqueness:** at most one current row in each assignment-tenure / condition / issue / service correction chain.
+- **I27 — Equipment workflow completion:** pending return/admin/transfer metadata may not remain beyond the settling window without its material result.
+- **I28 — Equipment Asset/Assignment compatibility:** active Assignment requires Asset.status=assigned; Asset.status=available may not coexist with an active Assignment.
+- **I29 — Layer 2 supersession completion:** a superseded AO+S row carrying replacement request identity must acquire exactly one matching replacement after the settling window.
+- **I30 — Event postponement completion:** a predecessor with pending postpone intent may not remain unresolved beyond the settling window once successor intent is materialized.
 
 | # | Invariant | v1 enforcement |
 |---|---|---|
@@ -306,7 +322,7 @@ I1–I13 originate in Amendment 001's PostgreSQL integrity model; I14–I17 are 
 | **Supersession / current-state correctness** — *"exactly one `is_current = true` row per key at all times"* | *At all times* is not achievable. The v1 assertion: a conditional write that would create a second current row is **rejected** (Section 2.1), and any second current row that nevertheless appears is detected by R2–R4 and escalated. Membership's `UNIQUE (user_id, organization_id)` is verified the same way, via R1. |
 | **Zero-OrgAdmin prevention** — *"including under concurrent revocation of two different administrators in separate transactions"* | The concurrency test is still required and still must show exactly one revocation succeeding. The mechanism under test is the guard record and its version condition (Section 5.3), not a deferred constraint and row lock. |
 | **Provisioning idempotency and non-repetition** — *"a forced mid-transaction failure leaves no Organization, Membership, or RoleAssignment"* | A forced failure may leave a **non-effective** Organization. The assertion becomes: no *effective* Organization, no usable Membership, no honoured RoleAssignment, the resolver grants nothing against the residue, and R11 reports it. Replay of the same `provisioning_request_id` still creates nothing and emits no second audit event; a second provisioning against an existing `organization_key` is still denied. |
-| **No direct client CRUD bypass** | Verified empirically for every in-scope internal entity by the Section 2.4 method (create → 403, read → empty, update → 404, delete → 404). `AnnouncementAudience`, `NotificationDeliveryAttempt` and `OutboxEvent` do not exist in v1, so those three are vacuous. |
+| **No direct client CRUD bypass** | Verified empirically for every in-scope internal entity by the Section 2.4 method (create → 403, read → empty, update → 404, delete → 404). `AnnouncementAudience`, `NotificationDeliveryAttempt` and `OutboxEvent` do not exist in v1, so those three are vacuous. Layer 2's Base44-only `EventMaterializationBatch` is backend/internal-only and must also deny all direct client CRUD/read. |
 
 Every other checklist item — schema correctness, authorization, Organization isolation, controlled-write enforcement, sensitivity exposure, lifecycle legality, fail-closed behaviour, tests, bootstrap self-extinguishing, policy hash enforcement, Platform authority containment — runs **unchanged**.
 
@@ -342,6 +358,106 @@ For `roster.move`, the payload hash covers source RosterAssignment identity, des
 **TeamSeason completion ordering (Layer 1 closure ratification):** Base44 first closes affected current CaptainAssignments, then completes each non-terminal child RosterAssignment with version guards, then requires bounded stable-read confirmation of zero current captains and zero non-terminal child rosters, and only then transitions the TeamSeason to `completed`. This ordering intentionally fails toward less authority and less exposure on partial application: a transient still-active TeamSeason with already-closed child authority is permitted; a visible `completed` TeamSeason with still-effective roster/captain authority is not. R16 remains the deterministic repair path for any externally-created or legacy `completed` TeamSeason that still has non-terminal roster/captain residue.
 
 All correctness-critical writes use application-owned version guards and bounded stable-read confirmation. These mechanisms do not create an ACID claim.
+
+### 5.8 Amendment 005 — Layer 2 Base44 recovery and ordering
+
+Layer 2 keeps canonical domain semantics but adds substrate-specific recovery state because Base44 lacks multi-row ACID transactions.
+
+#### EventMaterializationBatch
+
+Base44 adds one implementation-only backend/internal entity:
+
+**EventMaterializationBatch** — RestrictedStudent, immutable, no human/client CRUD/read.
+
+Fields:
+
+- `event_materialization_batch_uuid`
+- `event_id`
+- `materialization_request_id`
+- `material_hash`
+- `expected_count`
+- structured `snapshot_items[]` of exact `{membership_id, roster_assignment_id}` pairs, sorted deterministically
+- timestamps/provenance/correlation
+- immutable `creation_request_id`
+
+Exactly one batch exists per materialization request. It is written as one durable record before individual EventParticipationExpectation rows are emitted. Replays and R18 use that immutable batch; they never re-derive the historical snapshot from current roster state.
+
+#### Event draft→scheduled ordering
+
+1. CAS-validate Event still draft.
+2. Derive qualifying active/reserve roster snapshot.
+3. Compute server material hash.
+4. Create/replay immutable EventMaterializationBatch.
+5. Write Event pending materialization request/batch/hash metadata while Event remains draft.
+6. Create/replay expectation rows from the batch.
+7. Stable-read verify exact batch identities/count.
+8. Write the operational AuditLog event for `event.transition`.
+9. Transition Event to scheduled, persist accepted request/hash/count/batch, clear pending metadata **last**.
+
+A draft Event with partial request-tagged expectations is safe because Players cannot read draft Events. A scheduled Event with an incomplete accepted expectation set is not an accepted state.
+
+#### Practice creation ordering
+
+`practice.create` creates/replays the draft Practice Event first, then the unique Practice row, writes AuditLog, and stable-verifies the 1:1 pair. A draft orphan Practice Event is non-visible and may be deterministically repaired by R20 only when request identity is unambiguous.
+
+#### Event postponement ordering
+
+`event.postpone` creates/replays the successor as draft first, records predecessor pending request metadata, writes AuditLog, cancels the predecessor last, then clears pending metadata. A stray draft successor grants no Player visibility. R30 detects incomplete intent.
+
+#### Recurring series
+
+`recurring_series.expand` creates draft Events only inside an eight-week forward-generation window. Occurrence identity is `(series_id, local_occurrence_start)`. Draft occurrences carry series revision. Series edits increment revision and may deterministically update only draft occurrences; scheduled or terminal occurrences are immutable to series editing.
+
+#### Equipment pending standing
+
+Base44 uses `EquipmentAssignment.standing=pending` as a non-effective recovery state. Pending assignments:
+
+- grant no Player possession/read/projection authority;
+- do not satisfy “currently assigned to self” predicates;
+- may be activated only by the operation that owns their request identity.
+
+`equipment_assignment.assign` order:
+
+1. validate active Allocation, destination and actor;
+2. create/replay pending Assignment;
+3. write AuditLog;
+4. CAS Asset.status→assigned;
+5. CAS Assignment pending→active and clear pending metadata **last**;
+6. stable-verify exactly one active Assignment.
+
+`equipment.return` order:
+
+1. validate active Assignment and actor;
+2. set pending return metadata while Assignment remains active;
+3. create/replay return ConditionAssessment;
+4. derive target Asset.status (`good|worn→available`, `damaged|needs_service→maintenance`);
+5. write AuditLog;
+6. CAS Asset.status;
+7. close Assignment and clear pending metadata **last**;
+8. stable-verify no active Assignment remains.
+
+`equipment.administrative_closure` follows the same ordering using the caller's explicit legal resulting status.
+
+`equipment.transfer` order:
+
+1. validate source, destination, Allocation and actor;
+2. mark source pending transfer;
+3. create/replay destination as **pending/inert**;
+4. write AuditLog;
+5. close source as transferred;
+6. activate the exact pending destination;
+7. preserve Asset.status=assigned;
+8. stable-verify exactly one active Assignment;
+9. clear residual pending metadata.
+
+A transfer may transiently have zero active assignments with one inert pending destination; it must never transiently grant two effective assignments.
+
+#### AO+S replacement recovery
+
+When Layer 2 supersession marks an old row non-current before replacement creation, the old row carries Base44-only `replacement_request_id` and server-computed `replacement_material_hash`. R29 detects missing replacement. Reconciliation never fabricates a human-authored replacement.
+
+All Layer 2 settling windows are 5 minutes unless a later ratified profile amendment states otherwise.
+
 
 ## 6. Audit posture
 
@@ -418,6 +534,19 @@ Prohibition 12's v1 form: the audit write is attempted **before** the operation'
 | R15 | Duplicate OrganizationGameOffering | More than one Offering for `(organization_id, game_id)` | **No** | **Always.** Dependent resolution fails closed while ambiguous. | Hourly |
 | R16 | Incomplete TeamSeason completion cascade | TeamSeason `completed` while one or more child RosterAssignments remain `active|reserve|inactive` after a settling window measured from `TeamSeason.updated_at` | **Yes — complete leftover rosters and close affected captains.** | Review only if deterministic repair fails. | Every 5 minutes |
 | R17 | Incomplete captain replacement | Superseded old CaptainAssignment recovery metadata says replacement request `R` with non-null server-computed material-input hash `H`, but no replacement row with `creation_request_id=R` exists after settling window | **No** | **Always.** Replacement is a new grant whose prerequisites may have changed. Finding sensitivity is `RestrictedStudent`. | Hourly |
+| R18 | Incomplete Event expectation materialization | Event materialization pending past 5m, or scheduled Event accepted batch/hash/count disagrees with request-tagged expectation set | **Yes, only from immutable EventMaterializationBatch.** Never derive from current roster. | Report every repair; missing/ambiguous batch always review | Every 5 minutes |
+| R19 | Multiple-current Event expectation | >1 current expectation per `(event_id,membership_id)` | **No** | **Always.** | Hourly |
+| R20 | Practice/Event integrity | Missing/duplicate Practice, Practice→non-practice Event, or duplicate non-replaced activity sequence | Missing Practice may be recreated only from unambiguous `practice.create` request; otherwise no | Report repairs; all ambiguous cases review | Hourly |
+| R21 | Recurring occurrence drift | duplicate occurrence identity, missing draft occurrence inside eight-week window, or stale draft series revision | Missing draft occurrence / stale draft revision may be deterministically repaired when no conflict exists | Report repairs; duplicates review | Hourly |
+| R22 | Multiple active EquipmentAssignment | >1 current active Assignment per Asset | **No** | **Always.** | Every 15 minutes |
+| R23 | Equipment allocation/containment anomaly | duplicate active Allocation, missing target, or Assignment outside Allocation containment | **No** | **Always.** | Hourly |
+| R24 | Equipment Asset/Assignment divergence | active Assignment with Asset.status != assigned, or Asset available while active Assignment exists | If exactly one active Assignment exists, set Asset.status=assigned; never infer non-assigned status from absence | Report every repair; unresolved review | Every 15 minutes |
+| R25 | Incomplete equipment transfer | transferred source with request R but matching destination absent/inactive after 5m | **No** | **Always.** Destination authority is never invented. | Hourly |
+| R26 | Incomplete equipment return/admin closure | pending workflow past 5m | Finish only when persisted material inputs are complete/unambiguous; otherwise no | Report repairs; unresolved review | Every 5 minutes |
+| R27 | Multiple-current Equipment correction chain | >1 current row in Assignment tenure or Condition/Issue/Service correction chain | **No** | **Always.** | Hourly |
+| R28 | Incomplete Equipment assignment activation | pending assign past 5m or Asset assigned with only matching inert pending Assignment | Activate exact pending Assignment only when request, Allocation, Asset version and audit correlation remain unambiguous | Report repairs; unresolved review | Every 5 minutes |
+| R29 | Incomplete Layer 2 supersession replacement | superseded AO+S row has replacement request R but no replacement row with `creation_request_id=R` after 5m | **No** | **Always.** Human-authored replacement is never invented. | Hourly |
+| R30 | Incomplete Event postponement | predecessor pending postpone past 5m with missing successor or non-cancelled predecessor after successor creation | **No** | **Always.** Schedule intent is operator-reviewed. | Hourly |
 
 Cadences above are the frozen *maximum* interval for each sweep's class. A shorter interval is an operational decision; a longer one is an architecture decision.
 
@@ -528,12 +657,53 @@ The mapping for the operations named at this gate:
 | `submitMatchResult` | `result.submit` |
 | `finalizeResult` | `result.finalize` |
 | `evaluateEligibility` | `eligibility.evaluate` |
+| `createEvent` | `event.create` |
+| `updateEvent` | `event.update` |
+| `transitionEvent` | `event.transition` |
+| `cancelEvent` | `event.cancel` |
+| `postponeEvent` | `event.postpone` |
+| `createRecurringSeries` | `recurring_series.create` |
+| `updateRecurringSeries` | `recurring_series.update` |
+| `endRecurringSeries` | `recurring_series.end` |
+| `createPractice` | `practice.create` |
+| `createPracticeActivity` | `practice_activity.create` |
+| `updatePracticeActivity` | `practice_activity.update` |
+| `transitionPracticeActivity` | `practice_activity.transition` |
+| `replacePracticeActivity` | `practice_activity.replace` |
+| `createPracticeTemplate` | `practice_template.create` |
+| `updatePracticeTemplate` | `practice_template.update` |
+| `archivePracticeTemplate` | `practice_template.archive` |
+| `supersedeEventExpectation` | `event_expectation.supersede` |
+| `appendEventAdjustment` | `event_adjustment.append` |
+| `respondAvailability` | `availability.respond` |
+| `correctAvailability` | `availability.correct` |
+| `recordAttendance` | `attendance.record` |
+| `correctAttendance` | `attendance.correct` |
+| `createEquipmentAssetType` | `equipment_asset_type.create` |
+| `updateEquipmentAssetType` | `equipment_asset_type.update` |
+| `archiveEquipmentAssetType` | `equipment_asset_type.archive` |
+| `createEquipmentAsset` | `equipment_asset.create` |
+| `updateEquipmentAssetIdentity` | `equipment_asset.update_identity` |
+| `setEquipmentAssetAdministrativeStatus` | `equipment_asset.administrative_status` |
+| `createEquipmentAllocation` | `equipment_allocation.create` |
+| `transitionEquipmentAllocation` | `equipment_allocation.transition` |
+| `assignEquipment` | `equipment_assignment.assign` |
+| `correctEquipmentAssignment` | `equipment_assignment.correct` |
+| `recordEquipmentCondition` | `equipment_condition.record` |
+| `correctEquipmentCondition` | `equipment_condition.correct` |
+| `reportEquipmentIssue` | `equipment_issue.report` |
+| `correctEquipmentIssue` | `equipment_issue.correct` |
+| `recordEquipmentService` | `equipment_service.record` |
+| `correctEquipmentService` | `equipment_service.correct` |
+| `returnEquipment` | `equipment.return` |
+| `administrativelyCloseEquipmentAssignment` | `equipment.administrative_closure` |
+| `transferEquipment` | `equipment.transfer` |
 
 This table is illustrative of the *mapping discipline*, not an exhaustive v1 operation list. Every in-scope operation in Contract Section 4 gets an adapter entry, and the canonical `operation_key` is what is recorded in the audit record (Section 6.1) regardless of what the adapter calls it.
 
 ### 10.3 Operations that must have no adapter entry
 
-`policy.bootstrap`, `policy.activate` and `organization.provision` are **operator entrypoints** and must not be reachable from the client-facing surface in any form (Prohibition 18). They get no adapter operation, no route, and no UI affordance. The surface is **absent, not guarded**.
+`policy.bootstrap`, `policy.activate` and `organization.provision` are **operator entrypoints** and must not be reachable from the client-facing surface in any form (Prohibition 18). They get no adapter operation, no route, and no UI affordance. The surface is **absent, not guarded**. Layer 2 service operation `event.materialize_expectations` and `recurring_series.expand` likewise have no client adapter.
 
 ### 10.4 A CI boundary check the first implementation gate must resolve
 
@@ -592,12 +762,14 @@ Listed so no future deviation can be argued into existence by silence:
 
 ## 14. Ratification record
 
-All architecture decisions listed below have been ratified. **No item in this profile is awaiting ratification.**
+Items 1–3 below are ratified and in force. Item 4 is incorporated on this architecture branch and remains **pending ratification** until the Amendment 005 architecture PR merges.
 
 | # | Decision | Outcome | Where it lives |
 |---|---|---|---|
 | 1 | **Restriction domain** — `ParticipationRestriction` and `RestrictionReview` admitted as a derived consequence of `lineup.lock` being in scope | **Approved**, bounded to canonical lineup and participation gating. `lineup.lock` will not ship with the restriction-clear leg unevaluated. Conduct remains excluded and is not broadened by this. | Sections 3.1, 3.4 |
 | 2 | **`match_schedule.supersede` Outbox behaviour** — no `OutboxEvent` while Communication is excluded | **Approved** as a scoped profile deviation. Domain mutation and operational AuditLog remain required; no side effect exists because no consumer exists; admitting Communication reopens the requirement and needs the dedicated Communication gate. | Sections 5.1 (Invariant 14), 8.1 |
 | 3 | **Layer 1 Team/Roster Base44 recovery posture** — non-atomic move/replacement/cascade containment, I14–I17, R14–R17, and Game-scope deferral | **Approved** by Amendment 003. Canonical semantics remain in the contract; Base44-only recovery metadata and ordering live in this profile. | Sections 5.7, 7.2, 10.2 |
+| 4 | **Layer 2 Events/Attendance + Equipment recovery posture** — immutable EventMaterializationBatch, draft-last Event visibility ordering, inert pending EquipmentAssignment, I18–I30, R18–R30, Game-scope deferral, and Communication/Outbox exclusion | **Pending ratification** in Amendment 005. It becomes active profile behavior only after the architecture PR merges. | Sections 5.8, 7.2, 10.2 |
+| 4 | **Layer 2 Events/Attendance + Equipment recovery posture** — immutable EventMaterializationBatch, draft-last Event visibility ordering, inert pending EquipmentAssignment, I18–I30, R18–R30, Game-scope deferral, and Communication/Outbox exclusion | **Pending ratification** in Amendment 005. It becomes active profile behavior only after the architecture PR merges. | Sections 5.8, 7.2, 10.2 |
 
 A future item that requires a decision is added to this table by an architecture gate, not by an implementation agent. An implementation agent that believes it needs one stops and requests the gate (Section 0).
