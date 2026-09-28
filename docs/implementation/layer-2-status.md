@@ -245,3 +245,62 @@ Coverage includes:
 - Base44 runtime commit: `560f779461cb8b1bafa82b741be5bc13eb6eaf0e`
 
 Layer 2.1 remains unaccepted until the read-only verifier returns the exact all-pass result.
+
+
+## Layer 2.1 — ACCEPTED
+
+**Verdict:** PASSED
+
+### Acceptance evidence
+
+Verifier:
+
+- verifier: `layer2_containment_verification`
+- readOnly: true
+- total: 51
+- expectedTotal: 51
+- caseCountMatches: true
+- passed: 51
+- failed: 0
+- allPassed: true
+- failures: []
+
+Verified:
+
+- Event OrganizationWide scope containment;
+- Team scope contains child TeamSeason Events;
+- TeamSeason scope matches exact Event TeamSeason;
+- wrong Team / TeamSeason deny;
+- Game scope denies;
+- duplicate-current scope ambiguity denies;
+- `viewer_has_expectation` allows only active same-org viewer + exactly one current expected row + non-draft Event;
+- draft/missing/not-expected/inactive/cross-org/duplicate-current expectation cases deny;
+- Equipment Allocation containment works for OrganizationWide / Team / TeamSeason;
+- Team scope does not match Organization allocation;
+- Game scope denies for Equipment;
+- duplicate-current scope denies;
+- pending EquipmentAssignment does not count as Player possession;
+- active own Assignment matches;
+- Player issue-report active-assignment window matches;
+- exact persisted return window matches;
+- missing return request / pending assign / other member deny;
+- centralized resolver supports all Amendment 005 predicates;
+- unknown scope labels fail closed;
+- frozen Layer 1 resolver labels `same_organization`, `self`, `coach_scope`, and `viewer_team_season_member` regress green.
+
+### Independent post-run state
+
+- all 17 Layer 2 entity counts = 0
+- exactly one active policy
+- active policy = `1g-layer1-read-ratified`
+- active policy hash = `f4624985e292b9c0b53f3f4bea7d8ea92328de90cb3ec6b636098aea48bc3cf4`
+- production policy contains zero Layer 2 predicate rows
+- open R8 findings = 0
+- open R9 findings = 0
+
+### Post-pass checkpoint
+
+- checkpoint: `6abac00f45b4d96b85a09dd3`
+- Base44 runtime commit: `560f779461cb8b1bafa82b741be5bc13eb6eaf0e`
+
+Layer 2.1 is formally closed. Next slice: **Layer 2.2 — Candidate policy + read/write preflight**.
