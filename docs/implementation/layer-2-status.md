@@ -108,3 +108,50 @@ Expected runtime result:
 - Base44 runtime commit: `587ced02bc421f104dcefab608dfbfbafcf6452a`
 
 Layer 2.0 is not marked accepted until the runtime verifier returns the exact expected all-pass result.
+
+
+## Layer 2.0 — ACCEPTED
+
+**Verdict:** PASSED
+
+### Acceptance evidence
+
+Schema-management verifier:
+
+- verifier: `layer2_schema_management_verification`
+- readOnly: true
+- total: 55
+- passed: 55
+- failed: 0
+- allPassed: true
+
+Runtime state verifier:
+
+- verifier: `layer2_schema_state_verification`
+- readOnly: true
+- total: 18
+- expectedTotal: 18
+- caseCountMatches: true
+- passed: 18
+- failed: 0
+- allPassed: true
+- failures: []
+- activePolicy: `1g-layer1-read-ratified`
+
+Verified runtime state:
+
+- all 17 Layer 2 entity counts = 0
+- exactly one active policy
+- active policy hash remains `f4624985e292b9c0b53f3f4bea7d8ea92328de90cb3ec6b636098aea48bc3cf4`
+- open R8 findings = 0
+- open R9 findings = 0
+- no Layer 2 controlled operations activated
+- no Layer 2 policy grants activated
+- no synthetic fixtures created by either acceptance verifier
+
+### Post-pass checkpoint
+
+- checkpoint: `6ababceb8717fc73f542ad99`
+- Base44 runtime commit: `587ced02bc421f104dcefab608dfbfbafcf6452a`
+
+Layer 2.0 is formally closed. Next slice: **Layer 2.1 — Loaders + resolver containment**.
