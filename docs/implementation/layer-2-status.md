@@ -155,3 +155,93 @@ Verified runtime state:
 - Base44 runtime commit: `587ced02bc421f104dcefab608dfbfbafcf6452a`
 
 Layer 2.0 is formally closed. Next slice: **Layer 2.1 — Loaders + resolver containment**.
+
+
+## Layer 2.1 — Loaders + resolver containment
+
+**State:** STAGED — read-only containment verifier pending
+
+### Pre-slice checkpoint
+
+- checkpoint: `6ababd32fb665875a184bdd9`
+- Base44 runtime commit: `587ced02bc421f104dcefab608dfbfbafcf6452a`
+
+### Implementation staged
+
+Created:
+
+- `base44/shared/layer2-lifecycle.ts`
+- `base44/functions/layer2_containment_verification/entry.ts`
+
+Updated:
+
+- `base44/shared/resolver.ts`
+
+No production policy artifact was changed.
+
+No Layer 2 policy grant was activated.
+
+No domain rows or synthetic database fixtures were created.
+
+### New server-derived containment predicates
+
+Implemented:
+
+- `viewer_has_expectation`
+- Event CoachScope containment through Event → TeamSeason → Team
+- `equipment_allocation_scope_match`
+- `equipment_self_assignment_match`
+- `equipment_issue_report_window_match`
+
+Game scope remains deferred and ineffective.
+
+Duplicate-current scope ambiguity fails closed.
+
+Unknown resolver scope labels now fail closed instead of falling through after role match.
+
+### Layer 1 regression protection
+
+The verifier explicitly re-tests existing resolver labels:
+
+- `same_organization`
+- `self`
+- `coach_scope`
+- `viewer_team_season_member`
+
+### Staged read-only verifier
+
+Verifier: `layer2_containment_verification`
+
+Expected:
+
+- readOnly = true
+- total = 51
+- expectedTotal = 51
+- caseCountMatches = true
+- passed = 51
+- failed = 0
+- allPassed = true
+- failures = []
+
+Coverage includes:
+
+- OrganizationWide / Team / TeamSeason Event containment;
+- wrong Team/TeamSeason denial;
+- Game-scope denial;
+- duplicate-current scope denial;
+- viewer_has_expectation allow/deny/ambiguity cases;
+- OrganizationWide / Team / TeamSeason Equipment Allocation containment;
+- organization allocation denied to Team scope;
+- Game-scope denial for Equipment;
+- pending EquipmentAssignment not treated as Player possession;
+- exact Player issue-report active/return-window behavior;
+- centralized resolver seams for all Amendment 005 predicates;
+- unknown scope-label fail-closed behavior;
+- frozen Layer 1 scope-label regression.
+
+### Staged checkpoint
+
+- checkpoint: `6ababe58ff29b39759bbffcb`
+- Base44 runtime commit: `560f779461cb8b1bafa82b741be5bc13eb6eaf0e`
+
+Layer 2.1 remains unaccepted until the read-only verifier returns the exact all-pass result.
