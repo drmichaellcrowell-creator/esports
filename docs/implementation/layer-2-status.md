@@ -385,3 +385,89 @@ It independently reconstructs the expected Amendment 005 grant keys and verifies
 - Base44 runtime commit: `bc6ab33a34ff27588bc5a7c3848bb5e66fc4b409`
 
 Layer 2.2 is not accepted and `2a` must not be activated until the read-only preflight returns all-pass.
+
+
+## Layer 2.2 — ACCEPTED
+
+**Verdict:** PASSED
+
+### Read-only preflight evidence
+
+Verifier:
+
+- verifier: `layer2_policy_preflight`
+- readOnly: true
+- candidate version: `2a-layer2-foundation-ratified`
+- candidate hash: `cc7a2b7c842df5aa8bb3e8a73070bf73018de5038e3118b3b4886413b09ae1a1`
+- total rules: 172
+- frozen 1g rules: 55
+- Layer 2 delta rules: 117
+- expected Layer 2 delta count: 117
+- actual Layer 2 delta count: 117
+- failures: []
+- allPassed: true
+- duplicate keys: []
+- unexpected Layer 2 keys: []
+- missing Layer 2 keys: []
+
+Preflight proved:
+
+- candidate hash matches registry;
+- candidate rules match registry;
+- frozen 1g rules are preserved exactly;
+- no duplicate policy keys;
+- candidate delta exactly matches independently reconstructed Amendment 005 matrix;
+- candidate had no persisted policy row before activation;
+- no Player raw EquipmentAssetAllocation read;
+- no Player EquipmentServiceRecord read;
+- no Coach EquipmentAssetAllocation mutation;
+- Player Event read uses `viewer_has_expectation`;
+- Player Availability uses `respond` + self;
+- EquipmentProjection is Player self-only;
+- Player issue report uses exact issue-window predicate;
+- Coach Event reads use CoachScope;
+- Coach Equipment reads/writes use Allocation containment;
+- no Game-scope rules;
+- no excluded-domain resources.
+
+### Activation
+
+Controlled operation:
+
+- `policy.activate`
+- correlation id: `policy-activate-2a-92e54d52-d7c3-4cdb-a524-00e48e333322`
+- expected policy hash: `cc7a2b7c842df5aa8bb3e8a73070bf73018de5038e3118b3b4886413b09ae1a1`
+
+Activation result:
+
+- outcome: success
+- new policy UUID: `b90623ac-f1e5-41a1-8f3a-a9c2f3fb5a39`
+- superseded policy UUID: `e5d33548-4269-4ea3-823f-c43ac7657aa3`
+- active version: `2a-layer2-foundation-ratified`
+- active hash: `cc7a2b7c842df5aa8bb3e8a73070bf73018de5038e3118b3b4886413b09ae1a1`
+
+### Independent post-activation verification
+
+Verified:
+
+- exactly one active policy;
+- active policy = `2a-layer2-foundation-ratified`;
+- active policy hash exact;
+- prior `1g-layer1-read-ratified` is superseded;
+- open R8 findings = 0;
+- open R9 findings = 0;
+- all 17 Layer 2 domain counts = 0.
+
+### Checkpoints
+
+Pre-activation:
+
+- checkpoint: `6abac349e19463ec7e63d5b6`
+- Base44 runtime commit: `bc6ab33a34ff27588bc5a7c3848bb5e66fc4b409`
+
+Post-activation:
+
+- checkpoint: `6abac6d70453f851d9fbb40c`
+- Base44 runtime commit: `bc6ab33a34ff27588bc5a7c3848bb5e66fc4b409`
+
+Layer 2.2 is formally closed. Next slice: **Layer 2A.1 — Event core lifecycle**.
