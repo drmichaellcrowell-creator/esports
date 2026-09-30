@@ -471,3 +471,132 @@ Post-activation:
 - Base44 runtime commit: `bc6ab33a34ff27588bc5a7c3848bb5e66fc4b409`
 
 Layer 2.2 is formally closed. Next slice: **Layer 2A.1 — Event core lifecycle**.
+
+
+## Layer 2A.1 — Event core lifecycle
+
+**State:** STAGED — synthetic mutation verifier pending
+
+### Pre-slice checkpoint
+
+- checkpoint: `6abd788fffe8e3a591362bf1`
+- Base44 runtime commit: `bc6ab33a34ff27588bc5a7c3848bb5e66fc4b409`
+
+### Implementation staged
+
+Created:
+
+- `base44/shared/operations/event_core.ts`
+- `base44/shared/operations/recurring_series.ts`
+- `base44/functions/layer2_event_core_verification/entry.ts`
+
+Updated:
+
+- `base44/shared/operation-dispatcher.ts`
+
+Human-callable dispatcher operations added:
+
+- `event.create`
+- `event.update`
+- `event.transition`
+- `event.cancel`
+- `event.postpone`
+- `recurring_series.create`
+- `recurring_series.update`
+- `recurring_series.end`
+
+Service-only operation implemented but deliberately not dispatcher-exposed:
+
+- `recurring_series.expand`
+
+### Slice boundary
+
+`draft→scheduled` remains blocked in this slice and returns a conflict with failed audit because scheduling must invoke the Layer 2A.2 expectation-materialization workflow.
+
+No EventParticipationExpectation rows are created by Layer 2A.1.
+
+### Implemented behavior
+
+Event:
+
+- TeamSeason-scoped create for non-Practice Event types;
+- Class-A request replay/conflict behavior;
+- draft-only display/schedule/time-zone/location update;
+- target-state update replay;
+- `scheduled→in_progress→completed`;
+- terminal-state denial;
+- draft/scheduled cancellation;
+- postponement as draft successor + predecessor cancellation;
+- postponement request replay/conflict;
+- pending postponement metadata and clear-on-completion;
+- Practice postponement creates the successor's required 1:1 Practice row.
+
+RecurringEventSeries:
+
+- active create with weekly recurrence only;
+- request replay/conflict;
+- active-series metadata update with revision increment;
+- stale draft occurrence metadata reconciliation;
+- `active→ended` only;
+- target-state end replay;
+- service-only eight-week forward expansion;
+- deterministic occurrence identity `(series_id, local_start)`;
+- duplicate occurrence fail-closed;
+- missing draft occurrence creation;
+- practice-series expansion creates 1:1 Practice rows;
+- no human audit event for `recurring_series.expand`.
+
+### Staged verifier
+
+Verifier:
+
+`layer2_event_core_verification`
+
+Expected:
+
+- syntheticOnly = true
+- activePolicy = `2a-layer2-foundation-ratified`
+- total = 40
+- expectedTotal = 40
+- caseCountMatches = true
+- passed = 40
+- failed = 0
+- cleanup.passed = true
+- cleanup.failures = []
+- allPassed = true
+- failures = []
+
+Coverage includes:
+
+- OrgAdmin Event create;
+- create replay and changed-input conflict;
+- draft Event update and target-state replay;
+- blocked draft→scheduled until Layer 2A.2;
+- cancellation lifecycle;
+- scheduled→in_progress→completed;
+- terminal transition/cancel denial;
+- postponement success/replay/conflict;
+- predecessor cleanup + successor supersession;
+- Practice postponement 1:1 integrity;
+- Coach scoped allow;
+- Coach wrong-scope denial;
+- Game-scope denial;
+- recurring create/replay/conflict;
+- service expansion and occurrence uniqueness;
+- expansion idempotency;
+- series revision + draft metadata reconciliation;
+- series end + replay;
+- ended-series expansion denial;
+- practice-series expansion 1:1 integrity;
+- Coach recurring-series scope allow/deny;
+- draft Event Player-visibility denial;
+- no Layer 2A.2 expectation materialization;
+- no human audit for service expansion;
+- exact success/failed audit correlation checks.
+
+### Staged checkpoint
+
+- checkpoint: `6abd7ad98cb5446c02b121c4`
+- Base44 runtime commit: `61c6bbef22ce30d94f1c154d7707e04e37c360f3`
+
+Layer 2A.1 remains unaccepted until the synthetic verifier returns the exact all-pass result and cleanup succeeds.
