@@ -600,3 +600,67 @@ Coverage includes:
 - Base44 runtime commit: `61c6bbef22ce30d94f1c154d7707e04e37c360f3`
 
 Layer 2A.1 remains unaccepted until the synthetic verifier returns the exact all-pass result and cleanup succeeds.
+
+
+## Layer 2A.1 — Verification gate correction after timeout
+
+The first monolithic `layer2_event_core_verification` invocation exceeded Base44's 120-second execution ceiling and returned no acceptance JSON.
+
+Independent post-timeout verification found:
+
+- all Layer 2A domain rows = 0;
+- active policy remains `2a-layer2-foundation-ratified` at hash `cc7a2b7c842df5aa8bb3e8a73070bf73018de5038e3118b3b4886413b09ae1a1`;
+- open R8 = 0;
+- 14 open R9 findings were created by the timed-out synthetic fixture run.
+
+Those 14 R9 findings all referenced the exact synthetic run prefix:
+
+`l2a1-85a7c6a5-504d-4d76-a724-abf21d055e17`
+
+Before resolving them, the referenced Organization, Membership, RoleAssignment, CoachScopeAssignment, Team and TeamSeason fixture rows were independently verified absent. Exactly those 14 stale synthetic R9 findings were then marked resolved.
+
+Post-cleanup:
+
+- open R8 = 0
+- open R9 = 0
+- active policy unchanged
+
+### Verifier design defect discovered
+
+The original monolithic verifier declared `expectedTotal = 40`, but source analysis showed the runtime executes 48 logical assertions because `auditCheck(...)` is invoked nine times and each call records an assertion.
+
+Therefore the original 40-case acceptance contract was invalid even aside from the timeout.
+
+This is a verifier-only defect. Production Event/RecurringSeries operation code was not changed by this correction.
+
+### Replacement split acceptance gate
+
+The same substantive coverage is now split into three smaller verifiers to stay below Base44's 120-second ceiling:
+
+1. `layer2_event_lifecycle_verification`
+   - expectedTotal = 18
+2. `layer2_event_postpone_scope_verification`
+   - expectedTotal = 11
+3. `layer2_recurring_series_verification`
+   - expectedTotal = 21
+
+The three runs contain the original 48 assertions plus two repeated active-policy safety checks, for 50 total executed checks across the split gate.
+
+Each verifier must independently return:
+
+- `syntheticOnly = true`
+- `activePolicy = 2a-layer2-foundation-ratified`
+- exact `expectedTotal`
+- `caseCountMatches = true`
+- `failed = 0`
+- `cleanup.passed = true`
+- `cleanup.failures = []`
+- `allPassed = true`
+- `failures = []`
+
+Layer 2A.1 remains **PENDING**, not accepted, until all three split verifiers pass.
+
+### Corrected staged checkpoint
+
+- checkpoint: `6abe6f41073efae76c25ccff`
+- Base44 runtime commit: `997fc22306aac96da12268c10f87539a2026bbbe`
